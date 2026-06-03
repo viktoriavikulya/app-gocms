@@ -1,0 +1,73 @@
+package views
+
+import (
+	"github.com/fastygo/platform/pkg/render"
+	platformtempl "github.com/fastygo/platform/pkg/renderers/templ"
+)
+
+templ Page(title string, screen render.ScreenModel) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body class="min-h-screen bg-background text-foreground antialiased">
+			<div class="flex min-h-screen">
+				<aside class="w-64 border-r border-border bg-muted/20 p-4">
+					<a class="mb-6 block text-lg font-semibold" href="/go-admin/">GoCMS Admin</a>
+					<nav class="space-y-1 text-sm">
+						@NavLink("/go-admin/posts", "Posts")
+						@NavLink("/go-admin/pages", "Pages")
+						@NavLink("/go-admin/content-types", "Content Types")
+						@NavLink("/go-admin/taxonomies", "Taxonomies")
+						@NavLink("/go-admin/terms", "Terms")
+						@NavLink("/go-admin/meta", "Metadata")
+						@NavLink("/go-admin/media", "Media")
+						@NavLink("/go-admin/authors", "Authors")
+					</nav>
+				</aside>
+				<main class="flex-1 p-6">
+					<div class="mx-auto max-w-6xl space-y-6">
+						<header class="space-y-1">
+							<p class="text-sm text-muted-foreground">Schema-driven Platform preview</p>
+							<h1 class="text-2xl font-semibold tracking-tight">{ screen.Title }</h1>
+						</header>
+						@platformtempl.Screen(screen)
+					</div>
+				</main>
+			</div>
+		</body>
+	</html>
+}
+
+templ Home() {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>GoCMS Platform Preview</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body class="min-h-screen bg-background text-foreground antialiased">
+			<main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-6 p-6">
+				<div class="space-y-3">
+					<p class="text-sm font-medium text-muted-foreground">FastyGo Platform</p>
+					<h1 class="text-4xl font-semibold tracking-tight">GoCMS Platform Preview</h1>
+					<p class="text-muted-foreground">A runnable AppCMS shell for schema-driven CMS admin surfaces.</p>
+				</div>
+				<div class="flex gap-3">
+					<a class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" href="/go-admin/">Open admin</a>
+					<a class="rounded-md border border-border px-4 py-2 text-sm font-medium" href="/go-json/">Open API</a>
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+templ NavLink(href string, label string) {
+	<a class="block rounded-md px-3 py-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground" href={ templ.SafeURL(href) }>{ label }</a>
+}

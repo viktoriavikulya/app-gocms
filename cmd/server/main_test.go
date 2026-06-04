@@ -15,11 +15,10 @@ import (
 )
 
 func TestCodexRouteSurfaces(t *testing.T) {
-	mux := testMux(t)
+	handler := testHandler(t)
 	for _, path := range []string{"/", "/go-admin/", "/go-login", "/go-json/", "/go-json/go/v2/", "/go-admin/posts", "/go-admin/pages", "/go-admin/taxonomies", "/go-admin/media", "/go-admin/authors"} {
 		response := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, path, nil)
-		mux.ServeHTTP(response, request)
+		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
 		}
@@ -27,9 +26,9 @@ func TestCodexRouteSurfaces(t *testing.T) {
 }
 
 func TestLogoutRedirectsToLogin(t *testing.T) {
-	mux := testMux(t)
+	handler := testHandler(t)
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/go-logout", nil))
+	handler.ServeHTTP(response, testRequest(http.MethodPost, "/go-logout"))
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("expected logout redirect, got %d", response.Code)
 	}
@@ -39,9 +38,9 @@ func TestLogoutRedirectsToLogin(t *testing.T) {
 }
 
 func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
-	mux := testMux(t)
+	handler := testHandler(t)
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/go-json/go/v2/", nil))
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/"))
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected v2 discovery OK, got %d", response.Code)
 	}
@@ -58,12 +57,23 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 	}
 
 	response = httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/go-json/go/v2/posts", nil))
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts"))
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected posts list OK, got %d", response.Code)
 	}
 	if !strings.Contains(response.Body.String(), `"pagination"`) {
 		t.Fatalf("expected list pagination envelope, got %s", response.Body.String())
+	}
+}
+
+func TestFrameworkHealthEndpoints(t *testing.T) {
+	handler := testHandler(t)
+	for _, path := range []string{"/healthz", "/readyz"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -84,6 +94,7 @@ func TestAppCMSUsesModuleCMSDescriptors(t *testing.T) {
 func TestAppCMSDoesNotImportUI8Kit(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join("..", "..", "internal", "appschema", "screens.go"),
+		filepath.Join("..", "..", "pkg", "app", "app.go"),
 		"main.go",
 	} {
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
@@ -98,14 +109,25 @@ func TestAppCMSDoesNotImportUI8Kit(t *testing.T) {
 	}
 }
 
-func testMux(t *testing.T) *http.ServeMux {
+func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	registry, err := appschema.NewRegistry()
 	if err != nil {
 		t.Fatalf("build registry: %v", err)
 	}
-	return gocmsapp.NewMux(gocmsapp.Options{
+	application, err := gocmsapp.NewApp(gocmsapp.Options{
+		Addr:      "127.0.0.1:0",
 		StaticDir: filepath.Join("..", "..", "web", "static"),
 		Registry:  registry,
 	})
+	if err != nil {
+		t.Fatalf("build app: %v", err)
+	}
+	return application
+}
+
+func testRequest(method, path string) *http.Request {
+	request := httptest.NewRequest(method, path, nil)
+	request.Header.Set("User-Agent", "app-gocms-test")
+	return request
 }

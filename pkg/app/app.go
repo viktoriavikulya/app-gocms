@@ -1,15 +1,21 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/fastygo/app-gocms/internal/appschema"
 	views "github.com/fastygo/app-gocms/pkg/templ"
+	frameworkapp "github.com/fastygo/framework/pkg/app"
+	"github.com/fastygo/framework/pkg/web/security"
 )
 
 type Options struct {
@@ -19,35 +25,63 @@ type Options struct {
 }
 
 func Run() error {
-	addr := envOr("ADDR", "127.0.0.1:8080")
-	root, err := repoRoot()
+	application, err := NewApp(Options{})
 	if err != nil {
 		return err
 	}
-	registry, err := appschema.NewRegistry()
-	if err != nil {
+	log.Printf("app-gocms http://%s/", application.Config().AppBind)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := application.Run(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	log.Printf("app-gocms preview http://%s/", addr)
-	return http.ListenAndServe(addr, NewMux(Options{
-		Addr:      addr,
-		StaticDir: filepath.Join(root, "web", "static"),
-		Registry:  registry,
-	}))
+	return nil
+}
+
+func NewApp(options Options) (*frameworkapp.App, error) {
+	registry, err := registryFromOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := frameworkConfig(options)
+	if err != nil {
+		return nil, err
+	}
+	return frameworkapp.New(cfg).
+		WithSecurity(security.LoadConfig()).
+		WithHealthEndpoints(cfg.HealthLivePath, cfg.HealthReadyPath).
+		WithFeature(feature{registry: registry}).
+		Build(), nil
 }
 
 func NewMux(options Options) *http.ServeMux {
-	registry := options.Registry
-	if registry == nil {
-		var err error
-		registry, err = appschema.NewRegistry()
-		if err != nil {
-			panic(err)
-		}
+	registry, err := registryFromOptions(options)
+	if err != nil {
+		panic(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(options.StaticDir))))
+	registerRoutes(mux, registry)
+	return mux
+}
 
+type feature struct {
+	registry *appschema.Registry
+}
+
+func (f feature) ID() string {
+	return "app-gocms"
+}
+
+func (f feature) NavItems() []frameworkapp.NavItem {
+	return nil
+}
+
+func (f feature) Routes(mux *http.ServeMux) {
+	registerRoutes(mux, f.registry)
+}
+
+func registerRoutes(mux *http.ServeMux, registry *appschema.Registry) {
 	mux.HandleFunc("GET /{$}", renderHome)
 	mux.HandleFunc("GET /go-login", renderLogin)
 	mux.HandleFunc("POST /go-login", completeLogin)
@@ -58,7 +92,6 @@ func NewMux(options Options) *http.ServeMux {
 	mux.HandleFunc("GET /go-json/{$}", renderAPIRoot)
 	mux.HandleFunc("GET /go-json/go/v2/{$}", renderAPIV2)
 	mux.HandleFunc("GET /go-json/go/v2/{path...}", renderAPIResource)
-	return mux
 }
 
 func renderHome(w http.ResponseWriter, r *http.Request) {
@@ -132,11 +165,39 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func envOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func registryFromOptions(options Options) (*appschema.Registry, error) {
+	if options.Registry != nil {
+		return options.Registry, nil
 	}
-	return fallback
+	return appschema.NewRegistry()
+}
+
+func frameworkConfig(options Options) (frameworkapp.Config, error) {
+	cfg, err := frameworkapp.LoadConfig()
+	if err != nil {
+		return frameworkapp.Config{}, err
+	}
+	if options.Addr != "" {
+		cfg.AppBind = options.Addr
+	} else if addr := os.Getenv("ADDR"); addr != "" {
+		cfg.AppBind = addr
+	}
+	if options.StaticDir != "" {
+		cfg.StaticDir = options.StaticDir
+	} else if os.Getenv("APP_STATIC_DIR") == "" {
+		root, err := repoRoot()
+		if err != nil {
+			return frameworkapp.Config{}, err
+		}
+		cfg.StaticDir = filepath.Join(root, "web", "static")
+	}
+	if cfg.HealthLivePath == "" {
+		cfg.HealthLivePath = "/healthz"
+	}
+	if cfg.HealthReadyPath == "" {
+		cfg.HealthReadyPath = "/readyz"
+	}
+	return cfg, nil
 }
 
 func repoRoot() (string, error) {

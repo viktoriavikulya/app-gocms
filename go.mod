@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/a-h/templ v0.3.1001
+	github.com/fastygo/framework v0.0.0
 	github.com/fastygo/platform v0.0.0
 )
 
@@ -26,6 +27,8 @@ require (
 )
 
 replace github.com/fastygo/platform => ../@Platform
+
+replace github.com/fastygo/framework => ../@Framework
 
 replace github.com/fastygo/templ => ../@Templ
 

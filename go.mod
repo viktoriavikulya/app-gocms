@@ -6,6 +6,8 @@ require (
 	github.com/a-h/templ v0.3.1001
 	github.com/fastygo/framework v0.0.0
 	github.com/fastygo/platform v0.0.0
+	github.com/fastygo/templ v0.0.0
+	golang.org/x/crypto v0.48.0
 	modernc.org/sqlite v1.51.0
 )
 
@@ -15,7 +17,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fastygo/templ v0.0.0 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

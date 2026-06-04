@@ -30,6 +30,45 @@ func sqliteMigrations() []migration {
 				`CREATE INDEX IF NOT EXISTS idx_authors_workspace_slug ON authors(workspace_id, slug)`,
 			),
 		},
+		{
+			Version:     "0002_auth_schema",
+			Description: "create workspace-scoped auth users, roles, tokens, and login attempts",
+			Statements: []string{
+				`CREATE TABLE IF NOT EXISTS auth_users (
+					workspace_id TEXT NOT NULL,
+					id TEXT NOT NULL,
+					email TEXT NOT NULL DEFAULT '',
+					password_hash TEXT NOT NULL DEFAULT '',
+					roles_json TEXT NOT NULL DEFAULT '[]',
+					active INTEGER NOT NULL DEFAULT 1,
+					created_at TEXT NOT NULL DEFAULT '',
+					updated_at TEXT NOT NULL DEFAULT '',
+					PRIMARY KEY(workspace_id, id)
+				)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_workspace_email ON auth_users(workspace_id, email)`,
+				`CREATE TABLE IF NOT EXISTS auth_app_tokens (
+					workspace_id TEXT NOT NULL,
+					prefix TEXT NOT NULL,
+					user_id TEXT NOT NULL,
+					hash TEXT NOT NULL,
+					capabilities_json TEXT NOT NULL DEFAULT '[]',
+					expires_at TEXT NOT NULL DEFAULT '',
+					revoked_at TEXT NOT NULL DEFAULT '',
+					created_at TEXT NOT NULL DEFAULT '',
+					PRIMARY KEY(workspace_id, prefix)
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_auth_app_tokens_workspace_user ON auth_app_tokens(workspace_id, user_id)`,
+				`CREATE TABLE IF NOT EXISTS auth_login_attempts (
+					workspace_id TEXT NOT NULL,
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					identifier TEXT NOT NULL,
+					remote_addr TEXT NOT NULL DEFAULT '',
+					success INTEGER NOT NULL DEFAULT 0,
+					created_at TEXT NOT NULL
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_workspace_identifier ON auth_login_attempts(workspace_id, identifier, created_at)`,
+			},
+		},
 	}
 }
 

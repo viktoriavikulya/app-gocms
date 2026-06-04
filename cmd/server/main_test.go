@@ -8,19 +8,34 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
 	gocmsapp "github.com/fastygo/app-gocms/pkg/app"
+	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	"github.com/fastygo/platform/pkg/contracts"
 )
 
 func TestCodexRouteSurfaces(t *testing.T) {
 	handler := testHandler(t)
-	for _, path := range []string{"/", "/go-admin/", "/go-login", "/go-json/", "/go-json/go/v2/", "/go-admin/posts", "/go-admin/pages", "/go-admin/taxonomies", "/go-admin/media", "/go-admin/authors"} {
+	for _, path := range []string{"/", "/go-login", "/go-json/", "/go-json/go/v2/"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
+		}
+	}
+	cookie := loginCookie(t, handler, "admin", "admin")
+	for _, path := range []string{"/go-admin/", "/go-admin/posts", "/go-admin/pages", "/go-admin/taxonomies", "/go-admin/media", "/go-admin/authors"} {
+		response := httptest.NewRecorder()
+		request := testRequest(http.MethodGet, path)
+		request.AddCookie(cookie)
+		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
 		}
@@ -70,10 +85,11 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 
 func TestRESTContentCRUDRoundTrip(t *testing.T) {
 	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
 	create := `{"id":"post-rest","title":{"en":"REST Post"},"slug":"rest-post","content":"Hello REST","visibility":"public","status":"published","author_id":"admin"}`
 	response := httptest.NewRecorder()
 	request := testRequest(http.MethodPost, "/go-json/go/v2/posts")
-	request.Header.Set("Authorization", "Bearer admin-token")
+	request.AddCookie(cookie)
 	request.Body = io.NopCloser(bytes.NewBufferString(create))
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
@@ -106,7 +122,7 @@ func TestRESTContentCRUDRoundTrip(t *testing.T) {
 
 	response = httptest.NewRecorder()
 	request = testRequest(http.MethodPatch, "/go-json/go/v2/posts/post-rest")
-	request.Header.Set("Authorization", "Bearer admin-token")
+	request.AddCookie(cookie)
 	request.Body = io.NopCloser(bytes.NewBufferString(`{"excerpt":"updated excerpt"}`))
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -115,7 +131,7 @@ func TestRESTContentCRUDRoundTrip(t *testing.T) {
 
 	response = httptest.NewRecorder()
 	request = testRequest(http.MethodDelete, "/go-json/go/v2/posts/post-rest")
-	request.Header.Set("Authorization", "Bearer admin-token")
+	request.AddCookie(cookie)
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "trashed") {
 		t.Fatalf("delete returned %d: %s", response.Code, response.Body.String())
@@ -142,24 +158,82 @@ func TestRESTSearchAndErrorEnvelope(t *testing.T) {
 
 func TestAdminFormScreensAndHTMLNotFound(t *testing.T) {
 	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
 	for _, path := range []string{"/go-admin/posts/new", "/go-admin/posts/post-rest/edit", "/go-admin/media/new", "/go-admin/settings/new"} {
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
+		request := testRequest(http.MethodGet, path)
+		request.AddCookie(cookie)
+		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
 		}
 		body := response.Body.String()
-		if !strings.Contains(body, "<form") || !strings.Contains(body, "aria-label=") {
+		if !strings.Contains(body, "<form") || !strings.Contains(body, "aria-label=") || !strings.Contains(body, `name="action_token"`) {
 			t.Fatalf("%s should render accessible form screen: %s", path, body)
 		}
 	}
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-admin/missing"))
+	request := testRequest(http.MethodGet, "/go-admin/missing")
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("missing admin route returned %d", response.Code)
 	}
 	if contentType := response.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
 		t.Fatalf("admin 404 should be HTML, got %q", contentType)
+	}
+}
+
+func TestAuthSessionAndRESTAuthorization(t *testing.T) {
+	handler, store := testHandlerWithAuthStore(t)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-admin/"))
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/go-login" {
+		t.Fatalf("expected unauthenticated admin redirect, got %d %q", response.Code, response.Header().Get("Location"))
+	}
+	create := `{"id":"post-denied","title":{"en":"Denied"},"slug":"denied","content":"Denied"}`
+	response = httptest.NewRecorder()
+	request := testRequest(http.MethodPost, "/go-json/go/v2/posts")
+	request.Body = io.NopCloser(bytes.NewBufferString(create))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated REST mutation 401, got %d: %s", response.Code, response.Body.String())
+	}
+	viewer := loginCookie(t, handler, "viewer", "viewer")
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodPost, "/go-json/go/v2/posts")
+	request.AddCookie(viewer)
+	request.Body = io.NopCloser(bytes.NewBufferString(create))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected viewer REST mutation 403, got %d: %s", response.Code, response.Body.String())
+	}
+	service := appauthn.NewService(store)
+	raw, _, err := service.CreateAppToken(t.Context(), "editor", []contracts.CapabilityID{modulecms.CapabilityContentWrite}, time.Hour)
+	if err != nil {
+		t.Fatalf("create app token: %v", err)
+	}
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodPost, "/go-json/go/v2/posts")
+	request.Header.Set("Authorization", "Bearer "+raw)
+	request.Body = io.NopCloser(bytes.NewBufferString(create))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected scoped app token create, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestLoginLockout(t *testing.T) {
+	handler := testHandler(t)
+	for i := 0; i < 3; i++ {
+		response := postLogin(t, handler, "admin", "wrong")
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("bad login %d returned %d", i+1, response.Code)
+		}
+	}
+	response := postLogin(t, handler, "admin", "admin")
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected lockout after repeated failures, got %d", response.Code)
 	}
 }
 
@@ -208,24 +282,81 @@ func TestAppCMSDoesNotImportUI8Kit(t *testing.T) {
 
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
+	handler, _ := testHandlerWithAuthStore(t)
+	return handler
+}
+
+func testHandlerWithAuthStore(t *testing.T) (http.Handler, *appauthn.MemoryStore) {
+	t.Helper()
 	registry, err := appschema.NewRegistry()
 	if err != nil {
 		t.Fatalf("build registry: %v", err)
+	}
+	authStore, err := appauthn.NewSeededMemoryStore()
+	if err != nil {
+		t.Fatalf("seed auth store: %v", err)
 	}
 	application, err := gocmsapp.NewApp(gocmsapp.Options{
 		Addr:      "127.0.0.1:0",
 		StaticDir: filepath.Join("..", "..", "web", "static"),
 		Registry:  registry,
 		Seed:      true,
+		AuthStore: authStore,
 	})
 	if err != nil {
 		t.Fatalf("build app: %v", err)
 	}
-	return application
+	return application, authStore
 }
 
 func testRequest(method, path string) *http.Request {
 	request := httptest.NewRequest(method, path, nil)
 	request.Header.Set("User-Agent", "app-gocms-test")
 	return request
+}
+
+func loginCookie(t *testing.T, handler http.Handler, identifier string, password string) *http.Cookie {
+	t.Helper()
+	response := postLogin(t, handler, identifier, password)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("login returned %d: %s", response.Code, response.Body.String())
+	}
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == "appcms_session" {
+			return cookie
+		}
+	}
+	t.Fatalf("login did not issue appcms_session cookie")
+	return nil
+}
+
+func postLogin(t *testing.T, handler http.Handler, identifier string, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	tokenResponse := httptest.NewRecorder()
+	handler.ServeHTTP(tokenResponse, testRequest(http.MethodGet, "/go-login"))
+	token := hiddenValue(tokenResponse.Body.String(), "action_token")
+	form := url.Values{}
+	form.Set("action_token", token)
+	form.Set("identifier", identifier)
+	form.Set("password", password)
+	request := testRequest(http.MethodPost, "/go-login")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Body = io.NopCloser(strings.NewReader(form.Encode()))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func hiddenValue(body string, name string) string {
+	needle := `name="` + name + `" value="`
+	start := strings.Index(body, needle)
+	if start < 0 {
+		return ""
+	}
+	start += len(needle)
+	end := strings.Index(body[start:], `"`)
+	if end < 0 {
+		return ""
+	}
+	return body[start : start+end]
 }

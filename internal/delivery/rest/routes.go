@@ -14,7 +14,9 @@ import (
 	"github.com/fastygo/app-gocms/internal/domain/menus"
 	"github.com/fastygo/app-gocms/internal/domain/settings"
 	"github.com/fastygo/app-gocms/internal/domain/taxonomy"
+	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
+	"github.com/fastygo/platform/pkg/contracts"
 )
 
 func (h Handler) dispatch(ctx context.Context, r *http.Request, path string, s services) (int, any) {
@@ -75,8 +77,8 @@ func (h Handler) content(ctx context.Context, r *http.Request, parts []string, s
 	case len(parts) == 1 && r.Method == http.MethodGet:
 		return h.contentList(ctx, r, s, domaincontent.Query{Kind: kind})
 	case len(parts) == 1 && r.Method == http.MethodPost:
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
+			return status, payload
 		}
 		var entry domaincontent.Entry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
@@ -98,8 +100,8 @@ func (h Handler) content(ctx context.Context, r *http.Request, parts []string, s
 		}
 		return http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}
 	case len(parts) == 2 && r.Method == http.MethodPatch:
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
+			return status, payload
 		}
 		existing, ok, err := s.content.Get(ctx, domaincontent.ID(parts[1]))
 		if err != nil {
@@ -116,8 +118,8 @@ func (h Handler) content(ctx context.Context, r *http.Request, parts []string, s
 		err = s.content.Update(ctx, updated)
 		return result(http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: updated}, err)
 	case len(parts) == 2 && r.Method == http.MethodDelete:
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
+			return status, payload
 		}
 		entry, err := s.content.Trash(ctx, domaincontent.ID(parts[1]))
 		return result(http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}, err)
@@ -165,8 +167,8 @@ func (h Handler) taxonomies(ctx context.Context, r *http.Request, parts []string
 		return http.StatusOK, codex.ResourceEnvelope[[]taxonomy.Definition]{Data: []taxonomy.Definition{}}
 	}
 	if len(parts) == 1 && r.Method == http.MethodPost {
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityTaxonomyManage); !ok {
+			return status, payload
 		}
 		var definition taxonomy.Definition
 		if err := json.NewDecoder(r.Body).Decode(&definition); err != nil {
@@ -179,8 +181,8 @@ func (h Handler) taxonomies(ctx context.Context, r *http.Request, parts []string
 		return result(http.StatusOK, codex.ResourceEnvelope[[]taxonomy.Term]{Data: items}, err)
 	}
 	if len(parts) == 3 && parts[2] == "terms" && r.Method == http.MethodPost {
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityTaxonomyAssign); !ok {
+			return status, payload
 		}
 		var term taxonomy.Term
 		if err := json.NewDecoder(r.Body).Decode(&term); err != nil {
@@ -198,8 +200,8 @@ func (h Handler) media(ctx context.Context, r *http.Request, parts []string, s s
 		return result(http.StatusOK, codex.ResourceEnvelope[[]media.Asset]{Data: items}, err)
 	}
 	if len(parts) == 1 && r.Method == http.MethodPost {
-		if !canMutate(r) {
-			return unauthorized()
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityMediaUpload); !ok {
+			return status, payload
 		}
 		var asset media.Asset
 		if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
@@ -306,8 +308,24 @@ func listEnvelope[T any](items []T, page int, perPage int) codex.ListEnvelope[T]
 	return codex.ListEnvelope[T]{Data: items[start:end], Pagination: codex.Pagination{Page: page, PerPage: perPage, Total: total, TotalPages: totalPages}}
 }
 
-func canMutate(r *http.Request) bool {
-	return r.Header.Get("Authorization") == "Bearer admin-token"
+func (h Handler) authorize(r *http.Request, capability contracts.CapabilityID) (int, any, bool) {
+	if h.Authorize == nil {
+		return unauthorizedStatus()
+	}
+	authenticated, allowed := h.Authorize(r, capability)
+	if !authenticated {
+		return unauthorizedStatus()
+	}
+	if !allowed {
+		status, payload := forbidden()
+		return status, payload, false
+	}
+	return 0, nil, true
+}
+
+func unauthorizedStatus() (int, any, bool) {
+	status, payload := unauthorized()
+	return status, payload, false
 }
 
 func firstNonEmpty(values ...string) string {

@@ -21,13 +21,20 @@ import (
 type Handler struct {
 	Provider  storage.StoreProvider
 	Workspace contracts.WorkspaceID
+	Authorize Authorizer
 }
 
-func NewHandler(provider storage.StoreProvider, workspace contracts.WorkspaceID) Handler {
+type Authorizer func(*http.Request, contracts.CapabilityID) (authenticated bool, allowed bool)
+
+func NewHandler(provider storage.StoreProvider, workspace contracts.WorkspaceID, authorizers ...Authorizer) Handler {
 	if workspace == "" {
 		workspace = "root"
 	}
-	return Handler{Provider: provider, Workspace: workspace}
+	var authorizer Authorizer
+	if len(authorizers) > 0 {
+		authorizer = authorizers[0]
+	}
+	return Handler{Provider: provider, Workspace: workspace, Authorize: authorizer}
 }
 
 func (h Handler) Register(mux *http.ServeMux) {

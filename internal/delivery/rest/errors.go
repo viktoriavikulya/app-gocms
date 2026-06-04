@@ -41,6 +41,10 @@ func unauthorized() (int, any) {
 	return http.StatusUnauthorized, apiError(http.StatusUnauthorized, "unauthorized", "authorization required")
 }
 
+func forbidden() (int, any) {
+	return http.StatusForbidden, apiError(http.StatusForbidden, "forbidden", "missing capability")
+}
+
 func validationError(message string) (int, any) {
 	return http.StatusBadRequest, apiError(http.StatusBadRequest, "validation_error", message)
 }

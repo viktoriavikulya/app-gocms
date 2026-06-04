@@ -2,8 +2,10 @@
 
 This document describes the first Platform-based GoCMS replacement path.
 
+For the full AppCMS guide, start at [docs/README.md](README.md).
+
 Current GoCMS remains the compatibility oracle. AppCMS is the runnable
-replacement assembly. ModuleCMS owns the CMS domain schemas and descriptors.
+replacement assembly. The CMS module in `pkg/module` owns domain schemas and descriptors.
 
 ## Architecture Mapping
 
@@ -42,13 +44,19 @@ The replacement admin does not import UI8Kit.
 
 ## Current Compatibility Level
 
-This slice establishes the replacement shape and route compatibility surfaces.
-It includes discovery routes, list envelopes, admin route rendering, login/logout
-surfaces, and ModuleCMS schema coverage.
+AppCMS has progressed through product stack slices including Framework host,
+SQLite storage, application services, REST CRUD, templ admin UI, auth/RBAC,
+public themes, and compiled-in extensions (GraphQL, operations, snapshots).
 
-It is not yet a full data migration or binary media migration. Storage adapters,
-private content filtering at persistence level, CSRF enforcement, and full CRUD
-will be implemented in later compatibility slices.
+Remaining gaps vs full GoCMS (see Platform `current-progress.md`):
+
+- Postgres/MySQL storage drivers (SQLite is production path today)
+- Plugin marketplace and dynamic loading
+- Full GraphQL schema and mutation parity
+- Binary media pipeline and marketplace packages
+
+For architecture details see [AppCMS package layout](appcms/package-layout.md) and
+[extensions](appcms/extensions-and-operations.md).
 
 ## Commands
 

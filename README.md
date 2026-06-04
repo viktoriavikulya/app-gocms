@@ -51,5 +51,17 @@ AppCMS preserves the root GoCMS paths:
 - `/go-json`
 - `/go-json/go/v2/`
 
-See [`docs/migration-from-gocms.md`](docs/migration-from-gocms.md) for the
-current migration mapping and compatibility notes.
+## Documentation
+
+Full **101-level guide** (English): [`docs/README.md`](docs/README.md)
+
+| Section | Start here |
+|---------|------------|
+| Getting started | [`docs/getting-started/README.md`](docs/getting-started/README.md) |
+| Architecture | [`docs/architecture/README.md`](docs/architecture/README.md) |
+| FastyGo ecosystem | [`docs/ecosystem/README.md`](docs/ecosystem/README.md) |
+| AppCMS internals | [`docs/appcms/README.md`](docs/appcms/README.md) |
+| Development | [`docs/development/README.md`](docs/development/README.md) |
+
+See also [`docs/migration-from-gocms.md`](docs/migration-from-gocms.md) for the
+GoCMS migration mapping and compatibility notes.

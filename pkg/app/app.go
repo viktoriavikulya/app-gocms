@@ -13,15 +13,22 @@ import (
 	"syscall"
 
 	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/delivery/rest"
+	"github.com/fastygo/app-gocms/internal/storage"
+	storagesqlite "github.com/fastygo/app-gocms/internal/storage/sqlite"
 	views "github.com/fastygo/app-gocms/pkg/templ"
 	frameworkapp "github.com/fastygo/framework/pkg/app"
 	"github.com/fastygo/framework/pkg/web/security"
+	"github.com/fastygo/platform/pkg/contracts"
 )
 
 type Options struct {
-	Addr      string
-	StaticDir string
-	Registry  *appschema.Registry
+	Addr       string
+	StaticDir  string
+	Registry   *appschema.Registry
+	Storage    contracts.StoragePort
+	StorageDSN string
+	Seed       bool
 }
 
 func Run() error {
@@ -47,10 +54,14 @@ func NewApp(options Options) (*frameworkapp.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	provider, err := providerFromOptions(context.Background(), options)
+	if err != nil {
+		return nil, err
+	}
 	return frameworkapp.New(cfg).
 		WithSecurity(security.LoadConfig()).
 		WithHealthEndpoints(cfg.HealthLivePath, cfg.HealthReadyPath).
-		WithFeature(feature{registry: registry}).
+		WithFeature(feature{registry: registry, provider: provider}).
 		Build(), nil
 }
 
@@ -61,12 +72,17 @@ func NewMux(options Options) *http.ServeMux {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(options.StaticDir))))
-	registerRoutes(mux, registry)
+	provider, err := providerFromOptions(context.Background(), options)
+	if err != nil {
+		panic(err)
+	}
+	registerRoutes(mux, registry, provider)
 	return mux
 }
 
 type feature struct {
 	registry *appschema.Registry
+	provider storage.StoreProvider
 }
 
 func (f feature) ID() string {
@@ -78,10 +94,10 @@ func (f feature) NavItems() []frameworkapp.NavItem {
 }
 
 func (f feature) Routes(mux *http.ServeMux) {
-	registerRoutes(mux, f.registry)
+	registerRoutes(mux, f.registry, f.provider)
 }
 
-func registerRoutes(mux *http.ServeMux, registry *appschema.Registry) {
+func registerRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider) {
 	mux.HandleFunc("GET /{$}", renderHome)
 	mux.HandleFunc("GET /go-login", renderLogin)
 	mux.HandleFunc("POST /go-login", completeLogin)
@@ -89,9 +105,7 @@ func registerRoutes(mux *http.ServeMux, registry *appschema.Registry) {
 	mux.HandleFunc("POST /go-logout", completeLogout)
 	mux.HandleFunc("GET /go-admin/{$}", renderAdminDashboard(registry))
 	mux.HandleFunc("GET /go-admin/{path...}", renderAdminScreen(registry))
-	mux.HandleFunc("GET /go-json/{$}", renderAPIRoot)
-	mux.HandleFunc("GET /go-json/go/v2/{$}", renderAPIV2)
-	mux.HandleFunc("GET /go-json/go/v2/{path...}", renderAPIResource)
+	rest.NewHandler(provider, "root").Register(mux)
 }
 
 func renderHome(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +177,29 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func providerFromOptions(ctx context.Context, options Options) (storage.StoreProvider, error) {
+	if options.Storage != nil {
+		return storage.NewProvider(options.Storage), nil
+	}
+	dsn := options.StorageDSN
+	if dsn == "" {
+		dsn = "file:appcms?mode=memory&cache=shared"
+	}
+	store, err := storagesqlite.Open(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Init(ctx); err != nil {
+		return nil, err
+	}
+	if options.Seed {
+		if err := storagesqlite.SeedMinimalSite(ctx, store, "root"); err != nil {
+			return nil, err
+		}
+	}
+	return storage.NewProvider(store), nil
 }
 
 func registryFromOptions(options Options) (*appschema.Registry, error) {

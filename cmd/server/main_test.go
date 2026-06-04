@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"go/parser"
 	"go/token"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -66,6 +68,78 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 	}
 }
 
+func TestRESTContentCRUDRoundTrip(t *testing.T) {
+	handler := testHandler(t)
+	create := `{"id":"post-rest","title":{"en":"REST Post"},"slug":"rest-post","content":"Hello REST","visibility":"public","status":"published","author_id":"admin"}`
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodPost, "/go-json/go/v2/posts")
+	request.Header.Set("Authorization", "Bearer admin-token")
+	request.Body = io.NopCloser(bytes.NewBufferString(create))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts?per_page=1"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("list returned %d: %s", response.Code, response.Body.String())
+	}
+	var list struct {
+		Data       []map[string]any `json:"data"`
+		Pagination struct {
+			Total int `json:"total"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if list.Pagination.Total == 0 {
+		t.Fatalf("expected persisted post in list: %s", response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/post-rest"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "REST Post") {
+		t.Fatalf("get returned %d: %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodPatch, "/go-json/go/v2/posts/post-rest")
+	request.Header.Set("Authorization", "Bearer admin-token")
+	request.Body = io.NopCloser(bytes.NewBufferString(`{"excerpt":"updated excerpt"}`))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("patch returned %d: %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodDelete, "/go-json/go/v2/posts/post-rest")
+	request.Header.Set("Authorization", "Bearer admin-token")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "trashed") {
+		t.Fatalf("delete returned %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRESTSearchAndErrorEnvelope(t *testing.T) {
+	handler := testHandler(t)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/search?q=Hello"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"pagination"`) {
+		t.Fatalf("search returned %d: %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts?page=bad"))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid page returned %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"validation_error"`) {
+		t.Fatalf("expected validation error envelope: %s", response.Body.String())
+	}
+}
+
 func TestFrameworkHealthEndpoints(t *testing.T) {
 	handler := testHandler(t)
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -119,6 +193,7 @@ func testHandler(t *testing.T) http.Handler {
 		Addr:      "127.0.0.1:0",
 		StaticDir: filepath.Join("..", "..", "web", "static"),
 		Registry:  registry,
+		Seed:      true,
 	})
 	if err != nil {
 		t.Fatalf("build app: %v", err)

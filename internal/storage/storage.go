@@ -26,6 +26,8 @@ type Repositories struct {
 	Authors                RecordRepository
 	Settings               RecordRepository
 	Menus                  RecordRepository
+	Revisions              RecordRepository
+	Previews               RecordRepository
 }
 
 type RecordRepository interface {
@@ -65,6 +67,8 @@ func (s workspaceStore) WithinTx(ctx context.Context, fn func(context.Context, R
 			Authors:                recordRepository{workspace: s.workspace, recordType: string(records.RecordAuthor), tx: tx},
 			Settings:               recordRepository{workspace: s.workspace, recordType: "setting", tx: tx},
 			Menus:                  recordRepository{workspace: s.workspace, recordType: "menu", tx: tx},
+			Revisions:              recordRepository{workspace: s.workspace, recordType: "revision", tx: tx},
+			Previews:               recordRepository{workspace: s.workspace, recordType: "preview", tx: tx},
 		}
 		return fn(ctx, repos)
 	})

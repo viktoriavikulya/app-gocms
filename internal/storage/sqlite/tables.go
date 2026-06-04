@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	RecordSetting toolset.RecordTypeID = "setting"
-	RecordMenu    toolset.RecordTypeID = "menu"
+	RecordSetting  toolset.RecordTypeID = "setting"
+	RecordMenu     toolset.RecordTypeID = "menu"
+	RecordRevision toolset.RecordTypeID = "revision"
+	RecordPreview  toolset.RecordTypeID = "preview"
 )
 
 type recordTable struct {
@@ -29,6 +31,8 @@ func cmsTables() []recordTable {
 		{RecordType: string(records.RecordAuthor), Name: "authors"},
 		{RecordType: string(RecordSetting), Name: "settings"},
 		{RecordType: string(RecordMenu), Name: "menus"},
+		{RecordType: string(RecordRevision), Name: "revisions"},
+		{RecordType: string(RecordPreview), Name: "preview_access"},
 	}
 }
 

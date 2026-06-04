@@ -299,6 +299,89 @@ func TestFrameworkHealthEndpoints(t *testing.T) {
 	}
 }
 
+func TestGraphQLExtensionRouteAndVisibility(t *testing.T) {
+	handler := testHandler(t)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-graphql?query="+url.QueryEscape(`{posts{id slug title}}`)))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"posts"`) || !strings.Contains(response.Body.String(), "Hello world") {
+		t.Fatalf("expected public GraphQL posts, got %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	request := testRequest(http.MethodPost, "/go-graphql")
+	request.Body = io.NopCloser(strings.NewReader(`{"query":"mutation { createPost { id } }"}`))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("GraphQL mutations should be disabled in baseline, got %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestOperationsHealthAuditAndSnapshot(t *testing.T) {
+	handler := testHandler(t)
+	admin := loginCookie(t, handler, "admin", "admin")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/ops/health"))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected ops health auth, got %d", response.Code)
+	}
+	response = httptest.NewRecorder()
+	request := testRequest(http.MethodGet, "/go-json/go/v2/ops/health")
+	request.AddCookie(admin)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"storage"`) || !strings.Contains(response.Body.String(), `"plugin_runtime"`) {
+		t.Fatalf("expected health checks, got %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodGet, "/go-admin/import-export")
+	request.AddCookie(admin)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "gocms.snapshot.v1") {
+		t.Fatalf("expected import/export admin screen, got %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodGet, "/go-json/go/v2/ops/snapshot")
+	request.AddCookie(admin)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"version":"gocms.snapshot.v1"`) || !strings.Contains(response.Body.String(), "Hello world") {
+		t.Fatalf("expected snapshot export, got %d %s", response.Code, response.Body.String())
+	}
+	snapshot := response.Body.String()
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodPost, "/go-json/go/v2/ops/snapshot")
+	request.AddCookie(admin)
+	request.Body = io.NopCloser(strings.NewReader(snapshot))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"imported"`) {
+		t.Fatalf("expected snapshot import, got %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	request = testRequest(http.MethodGet, "/go-json/go/v2/ops/audit")
+	request.AddCookie(admin)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "snapshot.import") {
+		t.Fatalf("expected audit events, got %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRuntimeProfileModesGateSurfaces(t *testing.T) {
+	adminHandler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeAdmin})
+	response := httptest.NewRecorder()
+	adminHandler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("admin mode should disable public home, got %d", response.Code)
+	}
+	response = httptest.NewRecorder()
+	adminHandler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/by-slug/hello-world"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin mode should keep REST, got %d", response.Code)
+	}
+	conformanceHandler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeConformance})
+	response = httptest.NewRecorder()
+	conformanceHandler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Hello world") {
+		t.Fatalf("conformance mode should keep deterministic seeded public fixture, got %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestAppCMSUsesModuleCMSDescriptors(t *testing.T) {
 	registry, err := appschema.NewRegistry()
 	if err != nil {
@@ -361,12 +444,13 @@ func testHandlerWithAuthStoreOptions(t *testing.T, options gocmsapp.Options) (ht
 		t.Fatalf("seed auth store: %v", err)
 	}
 	application, err := gocmsapp.NewApp(gocmsapp.Options{
-		Addr:      "127.0.0.1:0",
-		StaticDir: filepath.Join("..", "..", "web", "static"),
-		Registry:  registry,
-		Seed:      true,
-		AuthStore: authStore,
-		Headless:  options.Headless,
+		Addr:        "127.0.0.1:0",
+		StaticDir:   filepath.Join("..", "..", "web", "static"),
+		Registry:    registry,
+		Seed:        true,
+		AuthStore:   authStore,
+		Headless:    options.Headless,
+		RuntimeMode: options.RuntimeMode,
 	})
 	if err != nil {
 		t.Fatalf("build app: %v", err)

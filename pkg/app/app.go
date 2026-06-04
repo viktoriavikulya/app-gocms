@@ -18,6 +18,10 @@ import (
 	"github.com/fastygo/app-gocms/internal/appschema"
 	"github.com/fastygo/app-gocms/internal/delivery/publicsite"
 	"github.com/fastygo/app-gocms/internal/delivery/rest"
+	"github.com/fastygo/app-gocms/internal/extensions"
+	"github.com/fastygo/app-gocms/internal/operations"
+	graphqlplugin "github.com/fastygo/app-gocms/internal/plugins/graphql"
+	opsplugin "github.com/fastygo/app-gocms/internal/plugins/ops"
 	"github.com/fastygo/app-gocms/internal/storage"
 	storagesqlite "github.com/fastygo/app-gocms/internal/storage/sqlite"
 	"github.com/fastygo/app-gocms/internal/themes"
@@ -30,16 +34,26 @@ import (
 )
 
 type Options struct {
-	Addr       string
-	StaticDir  string
-	Registry   *appschema.Registry
-	Storage    contracts.StoragePort
-	StorageDSN string
-	Seed       bool
-	AuthStore  *appauthn.MemoryStore
-	SessionKey string
-	Headless   bool
+	Addr        string
+	StaticDir   string
+	Registry    *appschema.Registry
+	Storage     contracts.StoragePort
+	StorageDSN  string
+	Seed        bool
+	AuthStore   *appauthn.MemoryStore
+	SessionKey  string
+	Headless    bool
+	RuntimeMode RuntimeMode
 }
+
+type RuntimeMode string
+
+const (
+	RuntimeModeFull        RuntimeMode = "full"
+	RuntimeModeHeadless    RuntimeMode = "headless"
+	RuntimeModeAdmin       RuntimeMode = "admin"
+	RuntimeModeConformance RuntimeMode = "conformance"
+)
 
 func Run() error {
 	application, err := NewApp(Options{})
@@ -75,7 +89,7 @@ func NewApp(options Options) (*frameworkapp.App, error) {
 	return frameworkapp.New(cfg).
 		WithSecurity(security.LoadConfig()).
 		WithHealthEndpoints(cfg.HealthLivePath, cfg.HealthReadyPath).
-		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary, headless: options.Headless}).
+		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary, mode: runtimeMode(options)}).
 		Build(), nil
 }
 
@@ -98,7 +112,7 @@ func NewMux(options Options) *http.ServeMux {
 	if err != nil {
 		panic(err)
 	}
-	registerRoutesWithOptions(mux, registry, provider, authBoundary, options.Headless)
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, runtimeMode(options))
 	return mux
 }
 
@@ -106,7 +120,7 @@ type feature struct {
 	registry *appschema.Registry
 	provider storage.StoreProvider
 	auth     authBoundary
-	headless bool
+	mode     RuntimeMode
 }
 
 func (f feature) ID() string {
@@ -118,26 +132,37 @@ func (f feature) NavItems() []frameworkapp.NavItem {
 }
 
 func (f feature) Routes(mux *http.ServeMux) {
-	registerRoutesWithOptions(mux, f.registry, f.provider, f.auth, f.headless)
+	registerRoutesWithOptions(mux, f.registry, f.provider, f.auth, f.mode)
 }
 
 func registerRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary) {
-	registerRoutesWithOptions(mux, registry, provider, authBoundary, false)
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, RuntimeModeFull)
 }
 
-func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary, headless bool) {
+func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary, mode RuntimeMode) {
 	public := publicsite.NewHandler(provider, "root", themes.DefaultRegistry())
-	public.Headless = headless
-	mux.Handle("GET /{$}", public)
+	public.Headless = mode == RuntimeModeHeadless || mode == RuntimeModeAdmin
+	if mode != RuntimeModeHeadless && mode != RuntimeModeAdmin {
+		mux.Handle("GET /{$}", public)
+	}
 	mux.HandleFunc("GET /go-login", authBoundary.renderLogin)
 	mux.HandleFunc("POST /go-login", authBoundary.completeLogin)
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
-	mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(renderAdminDashboard(registry)))
-	mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
+	if mode != RuntimeModeHeadless {
+		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(renderAdminDashboard(registry)))
+		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
+	}
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
-	mux.Handle("GET /posts/{slug}", public)
-	mux.Handle("GET /{slug}", public)
+	runtime, err := extensionRuntime(provider, mode)
+	if err != nil {
+		panic(err)
+	}
+	runtime.RegisterRoutes(mux, authBoundary.Authorize)
+	if mode != RuntimeModeHeadless && mode != RuntimeModeAdmin {
+		mux.Handle("GET /posts/{slug}", public)
+		mux.Handle("GET /{slug}", public)
+	}
 }
 
 func renderHome(w http.ResponseWriter, r *http.Request) {
@@ -415,6 +440,32 @@ func frameworkConfig(options Options) (frameworkapp.Config, error) {
 		cfg.HealthReadyPath = "/readyz"
 	}
 	return cfg, nil
+}
+
+func runtimeMode(options Options) RuntimeMode {
+	if options.Headless {
+		return RuntimeModeHeadless
+	}
+	if options.RuntimeMode != "" {
+		return options.RuntimeMode
+	}
+	return RuntimeModeFull
+}
+
+func extensionRuntime(provider storage.StoreProvider, mode RuntimeMode) (*extensions.Runtime, error) {
+	opsStore := operations.NewStore(100)
+	runtime, err := extensions.NewRuntime(
+		graphqlplugin.New(provider),
+		opsplugin.New(provider, opsStore, func() string { return string(mode) }),
+	)
+	if err != nil {
+		return nil, err
+	}
+	active := []string{"graphql", "operations"}
+	if err := runtime.Activate(context.Background(), active...); err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }
 
 func repoRoot() (string, error) {

@@ -8,6 +8,13 @@ and Panel descriptors. Platform owns renderer contracts and module hosting.
 AppCMS owns the product shell, theme tokens, Tailwind pipeline, static files,
 codex route surfaces, and the executable server.
 
+## Package Layout
+
+- `pkg/module`: CMS business module, records, relations, panel descriptors, codex helpers, and migration anchors.
+- `pkg/templ`: reusable CMS admin templ views that can render under the AppCMS theme or inside AppSuite.
+- `pkg/app`: standalone runtime plus reusable app bundle exported to launchers.
+- `cmd/server`: thin executable entry point.
+
 ## Commands
 
 ```bash

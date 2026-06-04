@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/fastygo/app-gocms/internal/appschema"
+	gocmsapp "github.com/fastygo/app-gocms/pkg/app"
 )
 
 func TestCodexRouteSurfaces(t *testing.T) {
@@ -103,5 +104,8 @@ func testMux(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatalf("build registry: %v", err)
 	}
-	return newMux(filepath.Join("..", "..", "web", "static"), registry)
+	return gocmsapp.NewMux(gocmsapp.Options{
+		StaticDir: filepath.Join("..", "..", "web", "static"),
+		Registry:  registry,
+	})
 }

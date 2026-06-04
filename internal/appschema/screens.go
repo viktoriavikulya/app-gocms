@@ -3,9 +3,9 @@ package appschema
 import (
 	"fmt"
 
-	modulecms "github.com/fastygo/module-cms"
-	"github.com/fastygo/module-cms/codex"
-	"github.com/fastygo/panel"
+	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	"github.com/fastygo/app-gocms/pkg/module/codex"
+	"github.com/fastygo/platform/pkg/panel"
 	"github.com/fastygo/platform/pkg/contracts"
 	"github.com/fastygo/platform/pkg/contracts/contractstest"
 	"github.com/fastygo/platform/pkg/modulehost"

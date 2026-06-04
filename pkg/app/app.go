@@ -130,7 +130,9 @@ func renderAdminScreen(registry *appschema.Registry) http.HandlerFunc {
 		path := strings.TrimRight(r.URL.Path, "/")
 		screen, err := registry.Screen(path)
 		if err != nil {
-			writeJSON(w, http.StatusNotFound, appschema.NotFound("admin screen not found"))
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

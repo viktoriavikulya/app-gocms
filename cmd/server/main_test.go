@@ -140,6 +140,29 @@ func TestRESTSearchAndErrorEnvelope(t *testing.T) {
 	}
 }
 
+func TestAdminFormScreensAndHTMLNotFound(t *testing.T) {
+	handler := testHandler(t)
+	for _, path := range []string{"/go-admin/posts/new", "/go-admin/posts/post-rest/edit", "/go-admin/media/new", "/go-admin/settings/new"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
+		}
+		body := response.Body.String()
+		if !strings.Contains(body, "<form") || !strings.Contains(body, "aria-label=") {
+			t.Fatalf("%s should render accessible form screen: %s", path, body)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-admin/missing"))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing admin route returned %d", response.Code)
+	}
+	if contentType := response.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
+		t.Fatalf("admin 404 should be HTML, got %q", contentType)
+	}
+}
+
 func TestFrameworkHealthEndpoints(t *testing.T) {
 	handler := testHandler(t)
 	for _, path := range []string{"/healthz", "/readyz"} {

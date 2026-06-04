@@ -3,6 +3,8 @@ package views
 import (
 	"github.com/fastygo/platform/pkg/render"
 	platformtempl "github.com/fastygo/platform/pkg/renderers/templ"
+	"github.com/fastygo/templ/components/card"
+	"github.com/fastygo/templ/ui/button"
 )
 
 templ Page(title string, screen render.ScreenModel) {
@@ -16,9 +18,14 @@ templ Page(title string, screen render.ScreenModel) {
 		</head>
 		<body class="min-h-screen bg-background text-foreground antialiased">
 			<div class="flex min-h-screen">
-				<aside class="w-64 border-r border-border bg-muted/20 p-4">
-					<a class="mb-6 block text-lg font-semibold" href="/go-admin/">GoCMS Admin</a>
-					<nav class="space-y-1 text-sm">
+				<aside class="w-64 border-r border-border bg-muted/20 p-4" aria-label="Product navigation">
+					@card.Card(card.CardProps{Variant: "muted", Class: "mb-4"}) {
+						@card.CardHeader(card.CardHeaderProps{Class: "space-y-1"}) {
+							@card.CardTitle(card.CardTitleProps{Order: 2}, "GoCMS Admin")
+							@card.CardDescription(card.CardDescriptionProps{}, "Content workspace")
+						}
+					}
+					<nav class="space-y-1 text-sm" aria-label="CMS resources">
 						@NavLink("/go-admin/posts", "Posts")
 						@NavLink("/go-admin/pages", "Pages")
 						@NavLink("/go-admin/content-types", "Content Types")
@@ -27,6 +34,8 @@ templ Page(title string, screen render.ScreenModel) {
 						@NavLink("/go-admin/meta", "Metadata")
 						@NavLink("/go-admin/media", "Media")
 						@NavLink("/go-admin/authors", "Authors")
+						@NavLink("/go-admin/menus", "Menus")
+						@NavLink("/go-admin/settings", "Settings")
 					</nav>
 				</aside>
 				<main class="flex-1 p-6">
@@ -34,6 +43,11 @@ templ Page(title string, screen render.ScreenModel) {
 						<header class="space-y-1">
 							<p class="text-sm text-muted-foreground">Schema-driven Platform preview</p>
 							<h1 class="text-2xl font-semibold tracking-tight">{ screen.Title }</h1>
+							<nav class="text-sm text-muted-foreground" aria-label="Breadcrumb">
+								<a class="hover:text-foreground" href="/go-admin/">Admin</a>
+								<span aria-hidden="true"> / </span>
+								<span>{ screen.Title }</span>
+							</nav>
 						</header>
 						@platformtempl.Screen(screen)
 					</div>
@@ -69,5 +83,7 @@ templ Home() {
 }
 
 templ NavLink(href string, label string) {
-	<a class="block rounded-md px-3 py-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground" href={ templ.SafeURL(href) }>{ label }</a>
+	@button.Button(button.ButtonProps{Variant: "ghost", Href: href, Class: "w-full justify-start text-muted-foreground hover:text-accent-foreground"}) {
+		{ label }
+	}
 }

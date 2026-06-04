@@ -16,9 +16,11 @@ import (
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/delivery/publicsite"
 	"github.com/fastygo/app-gocms/internal/delivery/rest"
 	"github.com/fastygo/app-gocms/internal/storage"
 	storagesqlite "github.com/fastygo/app-gocms/internal/storage/sqlite"
+	"github.com/fastygo/app-gocms/internal/themes"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	views "github.com/fastygo/app-gocms/pkg/templ"
 	frameworkapp "github.com/fastygo/framework/pkg/app"
@@ -36,6 +38,7 @@ type Options struct {
 	Seed       bool
 	AuthStore  *appauthn.MemoryStore
 	SessionKey string
+	Headless   bool
 }
 
 func Run() error {
@@ -72,7 +75,7 @@ func NewApp(options Options) (*frameworkapp.App, error) {
 	return frameworkapp.New(cfg).
 		WithSecurity(security.LoadConfig()).
 		WithHealthEndpoints(cfg.HealthLivePath, cfg.HealthReadyPath).
-		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary}).
+		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary, headless: options.Headless}).
 		Build(), nil
 }
 
@@ -95,7 +98,7 @@ func NewMux(options Options) *http.ServeMux {
 	if err != nil {
 		panic(err)
 	}
-	registerRoutes(mux, registry, provider, authBoundary)
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, options.Headless)
 	return mux
 }
 
@@ -103,6 +106,7 @@ type feature struct {
 	registry *appschema.Registry
 	provider storage.StoreProvider
 	auth     authBoundary
+	headless bool
 }
 
 func (f feature) ID() string {
@@ -114,11 +118,17 @@ func (f feature) NavItems() []frameworkapp.NavItem {
 }
 
 func (f feature) Routes(mux *http.ServeMux) {
-	registerRoutes(mux, f.registry, f.provider, f.auth)
+	registerRoutesWithOptions(mux, f.registry, f.provider, f.auth, f.headless)
 }
 
 func registerRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary) {
-	mux.HandleFunc("GET /{$}", renderHome)
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, false)
+}
+
+func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary, headless bool) {
+	public := publicsite.NewHandler(provider, "root", themes.DefaultRegistry())
+	public.Headless = headless
+	mux.Handle("GET /{$}", public)
 	mux.HandleFunc("GET /go-login", authBoundary.renderLogin)
 	mux.HandleFunc("POST /go-login", authBoundary.completeLogin)
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
@@ -126,6 +136,8 @@ func registerRoutes(mux *http.ServeMux, registry *appschema.Registry, provider s
 	mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(renderAdminDashboard(registry)))
 	mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
+	mux.Handle("GET /posts/{slug}", public)
+	mux.Handle("GET /{slug}", public)
 }
 
 func renderHome(w http.ResponseWriter, r *http.Request) {

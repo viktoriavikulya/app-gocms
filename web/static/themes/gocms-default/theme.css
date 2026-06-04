@@ -1,0 +1,9 @@
+@import "../../css/app.css";
+
+body {
+  min-height: 100vh;
+}
+
+.prose {
+  line-height: 1.75;
+}

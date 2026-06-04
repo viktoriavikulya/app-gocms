@@ -23,8 +23,10 @@ func SeedMinimalSite(ctx context.Context, store *Store, workspace contracts.Work
 			{string(records.RecordAuthor), "admin", contracts.Record{"display_name": "Admin", "slug": "admin", "active": true}},
 			{string(records.RecordPost), "hello-world", contracts.Record{"title": map[string]string{"en": "Hello world"}, "slug": "hello-world", "status": "published", "visibility": "public", "author_id": "admin", "created_at": now, "updated_at": now}},
 			{string(records.RecordPage), "about", contracts.Record{"title": map[string]string{"en": "About"}, "slug": "about", "status": "published", "visibility": "public", "author_id": "admin", "created_at": now, "updated_at": now}},
-			{string(RecordSetting), "site", contracts.Record{"key": "site", "title": "AppCMS", "locale": "en"}},
-			{string(RecordMenu), "primary", contracts.Record{"location": "primary", "items": []string{"about"}}},
+			{string(RecordSetting), "site.title", contracts.Record{"key": "site.title", "group": "site", "value": "AppCMS", "public": true}},
+			{string(RecordSetting), "site.description", contracts.Record{"key": "site.description", "group": "site", "value": "A FastyGo powered site.", "public": true}},
+			{string(RecordSetting), "theme.active", contracts.Record{"key": "theme.active", "group": "theme", "value": "gocms-default", "public": true}},
+			{string(RecordMenu), "primary", contracts.Record{"id": "primary", "location": "primary", "items": []map[string]any{{"id": "about", "label": "About", "url": "/about"}}}},
 		}
 		for _, item := range seed {
 			if err := tx.Put(ctx, item.recordType, item.id, item.record); err != nil {

@@ -90,6 +90,17 @@ func (h Handler) content(ctx context.Context, r *http.Request, parts []string, s
 			created, err = s.content.Publish(ctx, created.ID)
 		}
 		return result(http.StatusCreated, codex.ResourceEnvelope[domaincontent.Entry]{Data: created}, err)
+	case len(parts) == 3 && parts[1] == "by-slug" && r.Method == http.MethodGet:
+		items, err := s.content.List(ctx, domaincontent.Query{Kind: kind, Status: domaincontent.StatusPublished})
+		if err != nil {
+			return serverError(err)
+		}
+		for _, entry := range items {
+			if entry.Slug == parts[2] && entry.Visibility == domaincontent.VisibilityPublic {
+				return http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}
+			}
+		}
+		return notFound("content not found")
 	case len(parts) == 2 && r.Method == http.MethodGet:
 		entry, ok, err := s.content.Get(ctx, domaincontent.ID(parts[1]))
 		if err != nil {

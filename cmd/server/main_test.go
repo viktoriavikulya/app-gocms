@@ -81,6 +81,16 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 	if !strings.Contains(response.Body.String(), `"pagination"`) {
 		t.Fatalf("expected list pagination envelope, got %s", response.Body.String())
 	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/by-slug/hello-world"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Hello world") {
+		t.Fatalf("expected by-slug post envelope, got %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/pages/by-slug/about"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "About") {
+		t.Fatalf("expected by-slug page envelope, got %d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestRESTContentCRUDRoundTrip(t *testing.T) {
@@ -237,6 +247,47 @@ func TestLoginLockout(t *testing.T) {
 	}
 }
 
+func TestPublicSiteRendersThemeAndSlugs(t *testing.T) {
+	handler := testHandler(t)
+	for _, tc := range []struct {
+		path string
+		want []string
+		code int
+	}{
+		{path: "/", code: http.StatusOK, want: []string{`data-gocms-theme="gocms-default"`, `data-gocms-public-screen="home"`, "Hello world"}},
+		{path: "/posts/hello-world", code: http.StatusOK, want: []string{`data-gocms-public-screen="post"`, "Hello world"}},
+		{path: "/about", code: http.StatusOK, want: []string{`data-gocms-public-screen="page"`, "About"}},
+		{path: "/missing", code: http.StatusNotFound, want: []string{`data-gocms-public-screen="not_found"`, "Not found"}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, testRequest(http.MethodGet, tc.path))
+			if response.Code != tc.code {
+				t.Fatalf("%s returned %d: %s", tc.path, response.Code, response.Body.String())
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(response.Body.String(), want) {
+					t.Fatalf("%s missing %q in %s", tc.path, want, response.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestHeadlessDisablesPublicButKeepsREST(t *testing.T) {
+	handler := testHandlerOptions(t, gocmsapp.Options{Headless: true})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("headless public home returned %d", response.Code)
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/by-slug/hello-world"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Hello world") {
+		t.Fatalf("headless REST should remain available, got %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestFrameworkHealthEndpoints(t *testing.T) {
 	handler := testHandler(t)
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -265,6 +316,8 @@ func TestAppCMSUsesModuleCMSDescriptors(t *testing.T) {
 func TestAppCMSDoesNotImportUI8Kit(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join("..", "..", "internal", "appschema", "screens.go"),
+		filepath.Join("..", "..", "internal", "delivery", "publicsite", "handler.go"),
+		filepath.Join("..", "..", "internal", "themes", "registry.go"),
 		filepath.Join("..", "..", "pkg", "app", "app.go"),
 		"main.go",
 	} {
@@ -288,6 +341,17 @@ func testHandler(t *testing.T) http.Handler {
 
 func testHandlerWithAuthStore(t *testing.T) (http.Handler, *appauthn.MemoryStore) {
 	t.Helper()
+	return testHandlerWithAuthStoreOptions(t, gocmsapp.Options{})
+}
+
+func testHandlerOptions(t *testing.T, options gocmsapp.Options) http.Handler {
+	t.Helper()
+	handler, _ := testHandlerWithAuthStoreOptions(t, options)
+	return handler
+}
+
+func testHandlerWithAuthStoreOptions(t *testing.T, options gocmsapp.Options) (http.Handler, *appauthn.MemoryStore) {
+	t.Helper()
 	registry, err := appschema.NewRegistry()
 	if err != nil {
 		t.Fatalf("build registry: %v", err)
@@ -302,6 +366,7 @@ func testHandlerWithAuthStore(t *testing.T) (http.Handler, *appauthn.MemoryStore
 		Registry:  registry,
 		Seed:      true,
 		AuthStore: authStore,
+		Headless:  options.Headless,
 	})
 	if err != nil {
 		t.Fatalf("build app: %v", err)

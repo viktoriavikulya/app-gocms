@@ -1,0 +1,117 @@
+package themes
+
+import (
+	"github.com/fastygo/app-gocms/internal/publicrender"
+	"github.com/fastygo/templ/components/card"
+	"github.com/fastygo/templ/ui/button"
+)
+
+templ BlankPage(page publicrender.Page) {
+	<!DOCTYPE html>
+	<html lang={ page.Site.Locale }>
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ page.Title }</title>
+			<link rel="stylesheet" href="/static/themes/blank/theme.css"/>
+		</head>
+		<body data-gocms-theme="blank" data-gocms-public-screen={ string(page.Kind) }>
+			<main class="mx-auto max-w-3xl px-6 py-12">
+				<h1>{ page.Title }</h1>
+				@PublicBody(page)
+			</main>
+		</body>
+	</html>
+}
+
+templ DefaultPage(page publicrender.Page) {
+	<!DOCTYPE html>
+	<html lang={ page.Site.Locale }>
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ page.Title } · { page.Site.Title }</title>
+			if page.Permalink != "" {
+				<link rel="canonical" href={ templ.SafeURL(page.Permalink) }/>
+			}
+			<link rel="stylesheet" href="/static/themes/gocms-default/theme.css"/>
+		</head>
+		<body class="min-h-screen bg-background text-foreground antialiased" data-gocms-theme="gocms-default" data-gocms-public-screen={ string(page.Kind) }>
+			<header class="border-b border-border bg-card/80" data-gocms-public-header>
+				<div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+					<a class="text-lg font-semibold" href="/">{ page.Site.Title }</a>
+					if len(page.Menu) > 0 {
+						<nav class="flex gap-3 text-sm" aria-label="Primary navigation">
+							for _, item := range page.Menu {
+								<a class="text-muted-foreground hover:text-foreground" href={ templ.SafeURL(item.URL) }>{ item.Label }</a>
+							}
+						</nav>
+					}
+				</div>
+			</header>
+			<main class="mx-auto max-w-5xl px-6 py-10">
+				@PublicBody(page)
+			</main>
+			<footer class="border-t border-border px-6 py-6 text-center text-sm text-muted-foreground">
+				Powered by AppCMS
+			</footer>
+		</body>
+	</html>
+}
+
+templ PublicBody(page publicrender.Page) {
+	switch page.Kind {
+		case publicrender.KindHome:
+			<section class="space-y-6">
+				<div class="space-y-2">
+					<p class="text-sm font-medium text-muted-foreground">Public site</p>
+					<h1 class="text-4xl font-semibold tracking-tight">{ page.Site.Title }</h1>
+					if page.Site.Description != "" {
+						<p class="max-w-2xl text-muted-foreground">{ page.Site.Description }</p>
+					}
+				</div>
+				<div class="grid gap-4 md:grid-cols-2">
+					for _, entry := range page.Entries {
+						@card.Card(card.CardProps{Variant: "default"}) {
+							@card.CardHeader(card.CardHeaderProps{}) {
+								@card.CardTitle(card.CardTitleProps{Order: 2}, entry.Title)
+								if entry.Excerpt != "" {
+									@card.CardDescription(card.CardDescriptionProps{}, entry.Excerpt)
+								}
+							}
+							@card.CardContent(card.CardContentProps{}) {
+								@button.Button(button.ButtonProps{Href: entry.Permalink, Variant: "outline"}) {
+									Read
+								}
+							}
+						}
+					}
+				</div>
+			</section>
+		case publicrender.KindPost, publicrender.KindPage:
+			<article class="prose max-w-none space-y-6">
+				<nav class="text-sm text-muted-foreground" aria-label="Breadcrumb" data-gocms-breadcrumbs>
+					<a href="/">Home</a>
+					<span aria-hidden="true"> / </span>
+					<span>{ page.Title }</span>
+				</nav>
+				<h1 class="text-4xl font-semibold tracking-tight">{ page.Title }</h1>
+				if page.Excerpt != "" {
+					<p class="text-lg text-muted-foreground">{ page.Excerpt }</p>
+				}
+				if page.Content != "" {
+					<div>{ page.Content }</div>
+				} else {
+					<p>This content is ready for editing.</p>
+				}
+			</article>
+		default:
+			<section class="space-y-4">
+				<h1 class="text-3xl font-semibold">Not found</h1>
+				<p class="text-muted-foreground">The requested public page does not exist.</p>
+				@button.Button(button.ButtonProps{Href: "/", Variant: "outline"}) {
+					Back home
+				}
+			</section>
+	}
+}

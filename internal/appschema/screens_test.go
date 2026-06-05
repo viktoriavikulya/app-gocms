@@ -26,3 +26,27 @@ func TestScreensUsePlatformRendererModels(t *testing.T) {
 		t.Fatalf("unexpected form screen: %#v", form)
 	}
 }
+
+func TestTaxonomyTypeTermsPathResolves(t *testing.T) {
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, err := registry.Screen("/go-admin/taxonomies/category/terms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.View != render.ViewTable || table.Metadata["taxonomy_type"] != "category" {
+		t.Fatalf("unexpected taxonomy terms table: %#v", table)
+	}
+	if table.Metadata["list_path"] != "/go-admin/taxonomies/category/terms" {
+		t.Fatalf("unexpected list_path: %#v", table.Metadata)
+	}
+	form, err := registry.Screen("/go-admin/taxonomies/category/terms/new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if form.View != render.ViewForm || form.Metadata["taxonomy_type"] != "category" {
+		t.Fatalf("unexpected taxonomy terms form: %#v", form)
+	}
+}

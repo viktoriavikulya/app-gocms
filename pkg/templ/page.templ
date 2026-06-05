@@ -1,19 +1,18 @@
 package views
 
 import (
-	"github.com/fastygo/platform/pkg/render"
 	platformtempl "github.com/fastygo/platform/pkg/renderers/templ"
 	"github.com/fastygo/templ/components/card"
 	"github.com/fastygo/templ/ui/button"
 )
 
-templ Page(title string, screen render.ScreenModel) {
+templ Page(props PageProps) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title }</title>
+			<title>{ props.Title }</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 		</head>
 		<body class="min-h-screen bg-background text-foreground antialiased">
@@ -26,30 +25,26 @@ templ Page(title string, screen render.ScreenModel) {
 						}
 					}
 					<nav class="space-y-1 text-sm" aria-label="CMS resources">
-						@NavLink("/go-admin/posts", "Posts")
-						@NavLink("/go-admin/pages", "Pages")
-						@NavLink("/go-admin/content-types", "Content Types")
-						@NavLink("/go-admin/taxonomies", "Taxonomies")
-						@NavLink("/go-admin/terms", "Terms")
-						@NavLink("/go-admin/meta", "Metadata")
-						@NavLink("/go-admin/media", "Media")
-						@NavLink("/go-admin/authors", "Authors")
-						@NavLink("/go-admin/menus", "Menus")
-						@NavLink("/go-admin/settings", "Settings")
+						for _, item := range props.Nav {
+							@NavLink(item.Href, item.Label)
+						}
 					</nav>
 				</aside>
 				<main class="flex-1 p-6">
 					<div class="mx-auto max-w-6xl space-y-6">
+						if props.Screen.Metadata != nil && props.Screen.Metadata["taxonomy_type"] != "" {
+							<span data-gocms-taxonomy-type={ props.Screen.Metadata["taxonomy_type"] } class="sr-only"></span>
+						}
 						<header class="space-y-1">
 							<p class="text-sm text-muted-foreground">Schema-driven Platform preview</p>
-							<h1 class="text-2xl font-semibold tracking-tight">{ screen.Title }</h1>
+							<h1 class="text-2xl font-semibold tracking-tight">{ props.Screen.Title }</h1>
 							<nav class="text-sm text-muted-foreground" aria-label="Breadcrumb">
 								<a class="hover:text-foreground" href="/go-admin/">Admin</a>
 								<span aria-hidden="true"> / </span>
-								<span>{ screen.Title }</span>
+								<span>{ props.Screen.Title }</span>
 							</nav>
 						</header>
-						@platformtempl.Screen(screen)
+						@platformtempl.Screen(props.Screen)
 					</div>
 				</main>
 			</div>

@@ -31,6 +31,7 @@ import (
 	frameworkauth "github.com/fastygo/framework/pkg/auth"
 	"github.com/fastygo/framework/pkg/web/security"
 	"github.com/fastygo/platform/pkg/contracts"
+	"github.com/fastygo/platform/pkg/render"
 )
 
 type Options struct {
@@ -150,7 +151,10 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
 	if mode != RuntimeModeHeadless {
-		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(renderAdminDashboard(registry)))
+		mux.HandleFunc("GET /go-admin", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/go-admin/", http.StatusMovedPermanently)
+		})
+		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(authBoundary.renderAdminDashboard(registry)))
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
 	}
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
@@ -172,28 +176,60 @@ func renderHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func renderAdminDashboard(registry *appschema.Registry) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		screen := registry.DashboardScreen()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page("GoCMS Admin", screen).Render(r.Context(), w); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+const (
+	actionAdminWrite     = "admin-write"
+	actionContentWrite   = "admin.content.write"
+	actionContentBulk    = "admin.content.bulk"
+	actionMediaUpload    = "admin.media.upload"
+	actionSettingsWrite  = "admin.settings.write"
+	actionMenusWrite     = "admin.menus.write"
+	actionUsersWrite     = "admin.users.write"
+	actionPluginActivate = "admin.plugin.activate"
+	actionThemeActivate  = "admin.theme.activate"
+)
+
+func actionScopeForScreen(screen render.ScreenModel) string {
+	switch screen.Resource {
+	case "settings":
+		return actionSettingsWrite
+	case "menus":
+		return actionMenusWrite
+	case "media_asset", "media":
+		return actionMediaUpload
+	case "author":
+		return actionUsersWrite
+	default:
+		return actionContentWrite
 	}
 }
 
-func renderAdminScreen(registry *appschema.Registry) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimRight(r.URL.Path, "/")
-		screen, err := registry.Screen(path)
-		if err != nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
-			return
+func (a authBoundary) navLinksForRequest(r *http.Request, registry *appschema.Registry) []views.NavLinkData {
+	principal, ok := a.principalFromRequest(r)
+	links := make([]views.NavLinkData, 0, len(registry.NavItems()))
+	for _, item := range registry.NavItems() {
+		if item.Capability != "" {
+			if !ok || !principal.Has(item.Capability) {
+				continue
+			}
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page(screen.Title, screen).Render(r.Context(), w); err != nil {
+		links = append(links, views.NavLinkData{Href: item.Href, Label: item.Label})
+	}
+	return links
+}
+
+func (a authBoundary) renderAdminPage(w http.ResponseWriter, r *http.Request, registry *appschema.Registry, title string, screen render.ScreenModel) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return views.Page(views.PageProps{
+		Title:  title,
+		Screen: screen,
+		Nav:    a.navLinksForRequest(r, registry),
+	}).Render(r.Context(), w)
+}
+
+func (a authBoundary) renderAdminDashboard(registry *appschema.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		screen := registry.DashboardScreen()
+		if err := a.renderAdminPage(w, r, registry, "GoCMS Admin", screen); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
@@ -213,15 +249,14 @@ func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.Handl
 			if screen.Metadata == nil {
 				screen.Metadata = map[string]string{}
 			}
-			token, err := a.actionToken("admin-write", 10*time.Minute)
+			token, err := a.actionToken(actionScopeForScreen(screen), 10*time.Minute)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			screen.Metadata["action_token"] = token
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page(screen.Title, screen).Render(r.Context(), w); err != nil {
+		if err := a.renderAdminPage(w, r, registry, screen.Title, screen); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})

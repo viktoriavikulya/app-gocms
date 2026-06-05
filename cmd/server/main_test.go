@@ -19,6 +19,7 @@ import (
 	gocmsapp "github.com/fastygo/app-gocms/pkg/app"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/platform/pkg/contracts"
+	frameworkauth "github.com/fastygo/framework/pkg/auth"
 )
 
 func TestCodexRouteSurfaces(t *testing.T) {
@@ -163,6 +164,93 @@ func TestRESTSearchAndErrorEnvelope(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"validation_error"`) {
 		t.Fatalf("expected validation error envelope: %s", response.Body.String())
+	}
+}
+
+func TestGoAdminWithoutTrailingSlashRedirects(t *testing.T) {
+	handler := testHandler(t)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-admin"))
+	if response.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected 301 redirect, got %d", response.Code)
+	}
+	if location := response.Header().Get("Location"); location != "/go-admin/" {
+		t.Fatalf("expected Location /go-admin/, got %q", location)
+	}
+}
+
+func TestAdminNavListsRegisteredResources(t *testing.T) {
+	registry, err := appschema.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodGet, "/go-admin/posts")
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("/go-admin/posts returned %d: %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, item := range registry.NavItems() {
+		if !strings.Contains(body, item.Href) {
+			t.Fatalf("admin nav missing href %q", item.Href)
+		}
+	}
+}
+
+func TestTaxonomyTypeTermsPathHTTP(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodGet, "/go-admin/taxonomies/category/terms")
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("taxonomy terms path returned %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `data-gocms-taxonomy-type="category"`) {
+		t.Fatalf("expected taxonomy type marker in body: %s", response.Body.String())
+	}
+}
+
+func TestActionTokenScopedPerScreen(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	secret := "appcms-development-session-secret-32-bytes"
+	for _, tc := range []struct {
+		path   string
+		action string
+	}{
+		{path: "/go-admin/settings/new", action: "admin.settings.write"},
+		{path: "/go-admin/posts/new", action: "admin.content.write"},
+		{path: "/go-admin/media/new", action: "admin.media.upload"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			request := testRequest(http.MethodGet, tc.path)
+			request.AddCookie(cookie)
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s returned %d: %s", tc.path, response.Code, response.Body.String())
+			}
+			raw := hiddenValue(response.Body.String(), "action_token")
+			if raw == "" {
+				t.Fatalf("missing action_token on %s", tc.path)
+			}
+			var token struct {
+				Action string `json:"action"`
+				Exp    int64  `json:"exp"`
+			}
+			if err := frameworkauth.SignedDecode(raw, secret, &token); err != nil {
+				t.Fatalf("decode action token: %v", err)
+			}
+			if token.Action != tc.action {
+				t.Fatalf("action = %q, want %q", token.Action, tc.action)
+			}
+		})
 	}
 }
 

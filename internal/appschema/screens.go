@@ -72,10 +72,13 @@ func MustRegistry() *Registry {
 }
 
 func (r *Registry) Screen(path string) (render.ScreenModel, error) {
-	if screen, ok := r.Special[strings.TrimRight(path, "/")]; ok {
+	trimmed := strings.TrimRight(path, "/")
+	if screen, ok := r.Special[trimmed]; ok {
 		return screen, nil
 	}
-	trimmed := strings.TrimRight(path, "/")
+	if taxonomyType, isNew, ok := parseTaxonomyTermsPath(trimmed); ok {
+		return r.taxonomyTermsScreen(taxonomyType, isNew)
+	}
 	if strings.HasSuffix(trimmed, "/new") {
 		base := strings.TrimSuffix(trimmed, "/new")
 		if binding, ok := r.ByPath[base]; ok {
@@ -198,6 +201,47 @@ func screenMetadata(path string, record toolset.RecordTypeID) map[string]string 
 		"list_api":    "/go-json/go/v2/" + collectionForRecord(record),
 		"form_action": "/go-json/go/v2/" + collectionForRecord(record),
 	}
+}
+
+func parseTaxonomyTermsPath(path string) (taxonomyType string, isNew bool, ok bool) {
+	const prefix = "/go-admin/taxonomies/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false, false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 || parts[1] != "terms" {
+		return "", false, false
+	}
+	if parts[0] == "" {
+		return "", false, false
+	}
+	switch len(parts) {
+	case 2:
+		return parts[0], false, true
+	case 3:
+		if parts[2] == "new" {
+			return parts[0], true, true
+		}
+	}
+	return "", false, false
+}
+
+func (r *Registry) taxonomyTermsScreen(taxonomyType string, isNew bool) (render.ScreenModel, error) {
+	binding, ok := r.ByPath["/go-admin/terms"]
+	if !ok {
+		return render.ScreenModel{}, fmt.Errorf("terms resource not registered")
+	}
+	basePath := "/go-admin/taxonomies/" + taxonomyType + "/terms"
+	var screen render.ScreenModel
+	if isNew {
+		screen = render.ResourceFormScreen(binding.Resource, binding.Record)
+	} else {
+		screen = render.ResourceTableScreen(binding.Resource, binding.Record)
+	}
+	screen.Metadata = screenMetadata(basePath, binding.Record.ID)
+	screen.Metadata["taxonomy_type"] = taxonomyType
+	return screen, nil
 }
 
 func collectionForRecord(id toolset.RecordTypeID) string {

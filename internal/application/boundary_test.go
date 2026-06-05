@@ -7,20 +7,38 @@ import (
 )
 
 func TestApplicationLayerDoesNotImportDeliveryOrPlatformImplementations(t *testing.T) {
-	cmd := exec.Command("go", "list", "-deps", "./internal/application/...")
+	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", "./internal/application/...")
 	cmd.Dir = "../.."
 	output, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go list application deps: %v", err)
+		t.Fatalf("go list application imports: %v", err)
 	}
-	for _, disallowed := range []string{
+	disallowed := []string{
 		"github.com/fastygo/ui8kit",
 		"github.com/fastygo/platform/pkg/modulehost",
 		"github.com/fastygo/platform/pkg/render",
 		"net/http",
-	} {
-		if strings.Contains(string(output), disallowed) {
-			t.Fatalf("application layer imports disallowed package %s", disallowed)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		pkg := parts[0]
+		imports := ""
+		if len(parts) == 2 {
+			imports = parts[1]
+		}
+		for _, imp := range strings.Fields(imports) {
+			for _, banned := range disallowed {
+				if imp == banned {
+					t.Fatalf("%s directly imports disallowed package %s", pkg, banned)
+				}
+			}
 		}
 	}
 }

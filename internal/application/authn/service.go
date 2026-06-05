@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/platform/pkg/contracts"
 )
 
@@ -250,33 +249,47 @@ func (s Service) AuthenticateAppToken(_ context.Context, raw string) (Principal,
 func BuiltInRoles() map[string][]contracts.CapabilityID {
 	return map[string][]contracts.CapabilityID{
 		RoleAdmin: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentWrite,
-			modulecms.CapabilityContentPrivate,
-			modulecms.CapabilityMediaUpload,
-			modulecms.CapabilityMediaEdit,
-			modulecms.CapabilityTaxonomyManage,
-			modulecms.CapabilityTaxonomyAssign,
-			modulecms.CapabilityUsersManage,
-			modulecms.CapabilitySettingsManage,
+			capabilityAdminAccess,
+			capabilityContentRead,
+			capabilityContentWrite,
+			capabilityContentPrivate,
+			capabilityMediaUpload,
+			capabilityMediaEdit,
+			capabilityTaxonomyManage,
+			capabilityTaxonomyAssign,
+			capabilityUsersManage,
+			capabilitySettingsManage,
 		},
 		RoleEditor: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentWrite,
-			modulecms.CapabilityContentPrivate,
-			modulecms.CapabilityMediaUpload,
-			modulecms.CapabilityMediaEdit,
-			modulecms.CapabilityTaxonomyAssign,
+			capabilityAdminAccess,
+			capabilityContentRead,
+			capabilityContentWrite,
+			capabilityContentPrivate,
+			capabilityMediaUpload,
+			capabilityMediaEdit,
+			capabilityTaxonomyAssign,
 		},
 		RoleViewer: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentPrivate,
+			capabilityAdminAccess,
+			capabilityContentRead,
+			capabilityContentPrivate,
 		},
 	}
 }
+
+// Capability IDs mirror pkg/module/capabilities.go; kept local to avoid pulling panel/render deps into application/authn.
+const (
+	capabilityAdminAccess    contracts.CapabilityID = "admin.access"
+	capabilityContentRead    contracts.CapabilityID = "content.read"
+	capabilityContentWrite   contracts.CapabilityID = "content.write"
+	capabilityContentPrivate contracts.CapabilityID = "content.read_private"
+	capabilityMediaUpload    contracts.CapabilityID = "media.upload"
+	capabilityMediaEdit      contracts.CapabilityID = "media.edit"
+	capabilityTaxonomyManage contracts.CapabilityID = "taxonomies.manage"
+	capabilityTaxonomyAssign contracts.CapabilityID = "taxonomies.assign"
+	capabilityUsersManage    contracts.CapabilityID = "users.manage"
+	capabilitySettingsManage contracts.CapabilityID = "settings.manage"
+)
 
 const (
 	RoleAdmin  = "admin"

@@ -100,6 +100,7 @@ func TestContentDTOProjectionAndDraftHiding(t *testing.T) {
 func TestTaxonomyListAndPaths(t *testing.T) {
 	handler, auth := newTestHandler(t, seedTaxonomy)
 	admin := loginToken(t, auth, []contracts.CapabilityID{
+		modulecms.CapabilityContentCreate,
 		modulecms.CapabilityContentWrite,
 		modulecms.CapabilityTaxonomyManage,
 		modulecms.CapabilityTaxonomyAssign,
@@ -161,6 +162,7 @@ func TestTaxonomyListAndPaths(t *testing.T) {
 func TestMediaPatchAndFeatured(t *testing.T) {
 	handler, auth := newTestHandler(t, seedTaxonomy)
 	token := loginToken(t, auth, []contracts.CapabilityID{
+		modulecms.CapabilityContentCreate,
 		modulecms.CapabilityContentWrite,
 		modulecms.CapabilityMediaUpload,
 		modulecms.CapabilityMediaEdit,
@@ -229,7 +231,14 @@ func newTestHandler(t *testing.T, seed func(context.Context, storage.Repositorie
 		}
 		return true, principal.Has(capability)
 	}
-	handler := rest.NewHandler(provider, "root", authorizer)
+	handler := rest.NewHandler(provider, "root", authorizer).WithDeps(nil, nil, func(r *http.Request) (appauthn.Principal, bool) {
+		header := r.Header.Get("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			return appauthn.Principal{}, false
+		}
+		principal, err := auth.AuthenticateAppToken(r.Context(), strings.TrimPrefix(header, "Bearer "))
+		return principal, err == nil
+	})
 	mux := http.NewServeMux()
 	handler.Register(mux)
 	if seed != nil {

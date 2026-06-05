@@ -12,6 +12,7 @@ import (
 type Repository interface {
 	SaveRevision(context.Context, domainrevisions.Revision) error
 	GetRevision(context.Context, string) (domainrevisions.Revision, bool, error)
+	ListRevisionsByEntry(context.Context, domaincontent.ID) ([]domainrevisions.Revision, error)
 }
 
 type EntryRepository interface {
@@ -44,6 +45,21 @@ func (s Service) Create(ctx context.Context, id string, entryID domaincontent.ID
 	}
 	revision := domainrevisions.Revision{ID: id, EntryID: entryID, Entry: entry, CreatedAt: s.now().UTC()}
 	return revision, s.repo.SaveRevision(ctx, revision)
+}
+
+func (s Service) Get(ctx context.Context, id string) (domainrevisions.Revision, bool, error) {
+	return s.repo.GetRevision(ctx, id)
+}
+
+func (s Service) ListByEntry(ctx context.Context, entryID domaincontent.ID, limit int) ([]domainrevisions.Revision, error) {
+	items, err := s.repo.ListRevisionsByEntry(ctx, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if limit > 0 && len(items) > limit {
+		return items[:limit], nil
+	}
+	return items, nil
 }
 
 func (s Service) Restore(ctx context.Context, id string) (domaincontent.Entry, error) {

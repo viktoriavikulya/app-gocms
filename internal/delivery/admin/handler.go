@@ -5,16 +5,14 @@ import (
 	"net/http"
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
-	appcontent "github.com/fastygo/app-gocms/internal/application/content"
 	appcontenttype "github.com/fastygo/app-gocms/internal/application/contenttype"
-	appmedia "github.com/fastygo/app-gocms/internal/application/media"
-	appmenus "github.com/fastygo/app-gocms/internal/application/menus"
-	appsettings "github.com/fastygo/app-gocms/internal/application/settings"
-	apptaxonomy "github.com/fastygo/app-gocms/internal/application/taxonomy"
 	domaincontent "github.com/fastygo/app-gocms/internal/domain/content"
-	"github.com/fastygo/app-gocms/internal/domain/settings"
+	"github.com/fastygo/app-gocms/internal/application/wiring"
+	"github.com/fastygo/app-gocms/internal/extensions"
+	"github.com/fastygo/app-gocms/internal/operations"
 	"github.com/fastygo/app-gocms/internal/storage"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	"github.com/fastygo/app-gocms/pkg/module/capcheck"
 	"github.com/fastygo/platform/pkg/contracts"
 )
 
@@ -31,13 +29,19 @@ type Handler struct {
 	Workspace contracts.WorkspaceID
 	Auth      PrincipalResolver
 	Tokens    ActionTokenValidator
+	Hooks     *extensions.HookBus
+	Audit     operations.AuditRecorder
 }
 
 func NewHandler(provider storage.StoreProvider, workspace contracts.WorkspaceID, auth PrincipalResolver, tokens ActionTokenValidator) Handler {
+	return NewHandlerWithDeps(provider, workspace, auth, tokens, nil, nil)
+}
+
+func NewHandlerWithDeps(provider storage.StoreProvider, workspace contracts.WorkspaceID, auth PrincipalResolver, tokens ActionTokenValidator, hooks *extensions.HookBus, audit operations.AuditRecorder) Handler {
 	if workspace == "" {
 		workspace = "root"
 	}
-	return Handler{Provider: provider, Workspace: workspace, Auth: auth, Tokens: tokens}
+	return Handler{Provider: provider, Workspace: workspace, Auth: auth, Tokens: tokens, Hooks: hooks, Audit: audit}
 }
 
 func (h Handler) Register(mux *http.ServeMux) {
@@ -58,35 +62,17 @@ func (h Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /go-admin/menus", h.menuSave)
 	mux.HandleFunc("POST /go-admin/menus/{id}", h.menuUpdate)
 	mux.HandleFunc("POST /go-admin/content-types", h.contentTypeCreate)
+	h.registerTransitions(mux, domaincontent.KindPost, "posts")
+	h.registerTransitions(mux, domaincontent.KindPage, "pages")
 }
 
-type services struct {
-	content      appcontent.Service
-	contentTypes appcontenttype.Service
-	settings     appsettings.Service
-	taxonomy     apptaxonomy.Service
-	media        appmedia.Service
-	menus        appmenus.Service
-}
-
-func (h Handler) withServices(r *http.Request, fn func(ctx context.Context, s services) error) error {
+func (h Handler) withWiring(r *http.Request, fn func(ctx context.Context, s wiring.Services) error) error {
 	return h.Provider.ForWorkspace(h.Workspace).WithinTx(r.Context(), func(ctx context.Context, repos storage.Repositories) error {
 		appRepos := storage.NewApplicationRepositories(repos)
 		if err := appcontenttype.NewService(appRepos).InstallBuiltIns(ctx); err != nil {
 			return err
 		}
-		s := services{
-			content:      appcontent.NewService(appRepos, appRepos),
-			contentTypes: appcontenttype.NewService(appRepos),
-			settings: appsettings.NewService(appRepos, appsettings.NewRegistry(
-				settings.Definition{Key: "site.title", Group: "site", DefaultValue: "AppCMS", Public: true},
-				settings.Definition{Key: "site.description", Group: "site", DefaultValue: "", Public: true},
-			)),
-			taxonomy: apptaxonomy.NewService(appRepos, appRepos),
-			media:    appmedia.NewService(appRepos, appRepos),
-			menus:    appmenus.NewService(appRepos),
-		}
-		return fn(ctx, s)
+		return fn(ctx, wiring.Build(repos, wiring.Deps{Hooks: h.Hooks, Audit: h.Audit}))
 	})
 }
 
@@ -129,7 +115,8 @@ func (h Handler) contentCreate(kind domaincontent.Kind) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !requireCapability(w, principal, modulecms.CapabilityContentWrite) {
+		if !capcheck.CanCreate(principal) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if !h.validateToken(w, r, ActionContentWrite) {
@@ -137,16 +124,21 @@ func (h Handler) contentCreate(kind domaincontent.Kind) http.HandlerFunc {
 		}
 		entry, err := bindContent(r.PostForm, kind, "")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			setFlashError(w, err.Error())
+			http.Redirect(w, r, listPath+"/new", http.StatusSeeOther)
 			return
 		}
-		err = h.withServices(r, func(ctx context.Context, s services) error {
-			created, err := s.content.CreateDraft(ctx, entry)
+		entry.Content = SanitizeHTML(entry.Content)
+		entry.Excerpt = SanitizeHTML(entry.Excerpt)
+		var createdID domaincontent.ID
+		err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+			created, err := s.Content.CreateDraft(ctx, entry)
 			if err != nil {
 				return err
 			}
+			createdID = created.ID
 			if entry.Status == domaincontent.StatusPublished {
-				_, err = s.content.Publish(ctx, created.ID)
+				_, err = s.Content.Publish(ctx, created.ID)
 			}
 			return err
 		})
@@ -154,6 +146,7 @@ func (h Handler) contentCreate(kind domaincontent.Kind) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		h.recordAudit(principal, operations.ActionAdminContentCreate, string(kind), string(createdID), nil)
 		http.Redirect(w, r, listPath, http.StatusSeeOther)
 	}
 }
@@ -168,24 +161,27 @@ func (h Handler) contentUpdate(kind domaincontent.Kind) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !requireCapability(w, principal, modulecms.CapabilityContentWrite) {
-			return
-		}
 		if !h.validateToken(w, r, ActionContentWrite) {
 			return
 		}
 		entry, err := bindContent(r.PostForm, kind, domaincontent.ID(r.PathValue("id")))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			setFlashError(w, err.Error())
+			http.Redirect(w, r, listPath+"/"+r.PathValue("id")+"/edit", http.StatusSeeOther)
 			return
 		}
-		err = h.withServices(r, func(ctx context.Context, s services) error {
-			existing, found, err := s.content.Get(ctx, entry.ID)
+		entry.Content = SanitizeHTML(entry.Content)
+		entry.Excerpt = SanitizeHTML(entry.Excerpt)
+		err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+			existing, found, err := s.Content.Get(ctx, entry.ID)
 			if err != nil {
 				return err
 			}
 			if !found || existing.Kind != kind {
 				return errNotFound("content not found")
+			}
+			if !capcheck.CanEdit(principal, existing.AuthorID) {
+				return errNotFound("forbidden")
 			}
 			updated := mergeContentEntry(existing, entry)
 			if r.PostForm.Get("status") == "" {
@@ -194,11 +190,11 @@ func (h Handler) contentUpdate(kind domaincontent.Kind) http.HandlerFunc {
 			if r.PostForm.Get("visibility") == "" {
 				updated.Visibility = existing.Visibility
 			}
-			if err := s.content.Update(ctx, updated); err != nil {
+			if err := s.Content.Update(ctx, updated); err != nil {
 				return err
 			}
 			if updated.Status == domaincontent.StatusPublished && existing.Status != domaincontent.StatusPublished {
-				_, err = s.content.Publish(ctx, entry.ID)
+				_, err = s.Content.Publish(ctx, entry.ID)
 			}
 			return err
 		})
@@ -210,6 +206,7 @@ func (h Handler) contentUpdate(kind domaincontent.Kind) http.HandlerFunc {
 			http.Error(w, err.Error(), status)
 			return
 		}
+		h.recordAudit(principal, operations.ActionAdminContentUpdate, string(kind), string(entry.ID), nil)
 		http.Redirect(w, r, listPath, http.StatusSeeOther)
 	}
 }
@@ -224,22 +221,23 @@ func (h Handler) contentTrash(kind domaincontent.Kind) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !requireCapability(w, principal, modulecms.CapabilityContentWrite) {
+		if !capcheck.CanDelete(principal) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if !h.validateToken(w, r, ActionContentWrite) {
 			return
 		}
 		id := domaincontent.ID(r.PathValue("id"))
-		err := h.withServices(r, func(ctx context.Context, s services) error {
-			entry, found, err := s.content.Get(ctx, id)
+		err := h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+			entry, found, err := s.Content.Get(ctx, id)
 			if err != nil {
 				return err
 			}
 			if !found || entry.Kind != kind {
 				return errNotFound("content not found")
 			}
-			_, err = s.content.Trash(ctx, id)
+			_, err = s.Content.Trash(ctx, id)
 			return err
 		})
 		if err != nil {
@@ -250,6 +248,7 @@ func (h Handler) contentTrash(kind domaincontent.Kind) http.HandlerFunc {
 			http.Error(w, err.Error(), status)
 			return
 		}
+		h.recordAudit(principal, operations.ActionAdminContentTrash, string(kind), string(id), nil)
 		http.Redirect(w, r, listPath, http.StatusSeeOther)
 	}
 }
@@ -270,8 +269,8 @@ func (h Handler) taxonomyCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.taxonomy.Register(ctx, definition)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Taxonomy.Register(ctx, definition)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -310,8 +309,8 @@ func (h Handler) termCreateWithType(w http.ResponseWriter, r *http.Request, taxo
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.taxonomy.CreateTerm(ctx, term)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Taxonomy.CreateTerm(ctx, term)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -354,8 +353,8 @@ func (h Handler) termUpdateWithType(w http.ResponseWriter, r *http.Request, taxo
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.taxonomy.CreateTerm(ctx, term)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Taxonomy.CreateTerm(ctx, term)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -384,8 +383,8 @@ func (h Handler) mediaSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.media.SaveMetadata(ctx, asset)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Media.SaveMetadata(ctx, asset)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -410,8 +409,8 @@ func (h Handler) mediaUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.media.Update(ctx, asset)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Media.Update(ctx, asset)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -436,9 +435,9 @@ func (h Handler) settingsSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no settings submitted", http.StatusBadRequest)
 		return
 	}
-	err := h.withServices(r, func(ctx context.Context, s services) error {
+	err := h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
 		for _, value := range values {
-			if err := s.settings.Save(ctx, value); err != nil {
+			if err := s.Settings.Save(ctx, value); err != nil {
 				return err
 			}
 		}
@@ -475,8 +474,8 @@ func (h Handler) menuSaveWithID(w http.ResponseWriter, r *http.Request, id strin
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.menus.Save(ctx, menu)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.Menus.Save(ctx, menu)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -490,19 +489,20 @@ func (h Handler) contentTypeCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !requireCapability(w, principal, modulecms.CapabilityContentWrite) {
-		return
-	}
-	if !h.validateToken(w, r, ActionContentWrite) {
-		return
-	}
-	item, err := bindContentType(r.PostForm)
+		if !capcheck.CanCreate(principal) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if !h.validateToken(w, r, ActionContentWrite) {
+			return
+		}
+		item, err := bindContentType(r.PostForm)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.withServices(r, func(ctx context.Context, s services) error {
-		return s.contentTypes.Register(ctx, item)
+	err = h.withWiring(r, func(ctx context.Context, s wiring.Services) error {
+		return s.ContentTypes.Register(ctx, item)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

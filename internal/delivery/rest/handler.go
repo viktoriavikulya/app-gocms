@@ -5,14 +5,11 @@ import (
 	"net/http"
 	"strings"
 
-	appcontent "github.com/fastygo/app-gocms/internal/application/content"
+	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	appcontenttype "github.com/fastygo/app-gocms/internal/application/contenttype"
-	appmedia "github.com/fastygo/app-gocms/internal/application/media"
-	appmenus "github.com/fastygo/app-gocms/internal/application/menus"
-	appsettings "github.com/fastygo/app-gocms/internal/application/settings"
-	apptaxonomy "github.com/fastygo/app-gocms/internal/application/taxonomy"
-	appusers "github.com/fastygo/app-gocms/internal/application/users"
-	"github.com/fastygo/app-gocms/internal/domain/settings"
+	"github.com/fastygo/app-gocms/internal/application/wiring"
+	"github.com/fastygo/app-gocms/internal/extensions"
+	"github.com/fastygo/app-gocms/internal/operations"
 	"github.com/fastygo/app-gocms/internal/storage"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
 	"github.com/fastygo/platform/pkg/contracts"
@@ -22,6 +19,9 @@ type Handler struct {
 	Provider  storage.StoreProvider
 	Workspace contracts.WorkspaceID
 	Authorize Authorizer
+	Principal func(*http.Request) (appauthn.Principal, bool)
+	Hooks     *extensions.HookBus
+	Audit     operations.AuditRecorder
 }
 
 type Authorizer func(*http.Request, contracts.CapabilityID) (authenticated bool, allowed bool)
@@ -35,6 +35,13 @@ func NewHandler(provider storage.StoreProvider, workspace contracts.WorkspaceID,
 		authorizer = authorizers[0]
 	}
 	return Handler{Provider: provider, Workspace: workspace, Authorize: authorizer}
+}
+
+func (h Handler) WithDeps(hooks *extensions.HookBus, audit operations.AuditRecorder, principal func(*http.Request) (appauthn.Principal, bool)) Handler {
+	h.Hooks = hooks
+	h.Audit = audit
+	h.Principal = principal
+	return h
 }
 
 func (h Handler) Register(mux *http.ServeMux) {
@@ -65,15 +72,7 @@ func (h Handler) handle(r *http.Request, path string) (int, any) {
 		if err := appcontenttype.NewService(appRepos).InstallBuiltIns(ctx); err != nil {
 			return err
 		}
-		services := services{
-			content:      appcontent.NewService(appRepos, appRepos),
-			contentTypes: appcontenttype.NewService(appRepos),
-			settings:     appsettings.NewService(appRepos, appsettings.NewRegistry(settings.Definition{Key: "site.title", Group: "site", DefaultValue: "AppCMS", Public: true})),
-			users:        appusers.NewService(appRepos),
-			taxonomy:     apptaxonomy.NewService(appRepos, appRepos),
-			media:        appmedia.NewService(appRepos, appRepos),
-			menus:        appmenus.NewService(appRepos),
-		}
+		services := wiring.Build(repos, wiring.Deps{Hooks: h.Hooks, Audit: h.Audit})
 		status, payload = h.dispatch(ctx, r, path, services)
 		return nil
 	})
@@ -83,12 +82,9 @@ func (h Handler) handle(r *http.Request, path string) (int, any) {
 	return status, payload
 }
 
-type services struct {
-	content      appcontent.Service
-	contentTypes appcontenttype.Service
-	settings     appsettings.Service
-	users        appusers.Service
-	taxonomy     apptaxonomy.Service
-	media        appmedia.Service
-	menus        appmenus.Service
+func (h Handler) principal(r *http.Request) (appauthn.Principal, bool) {
+	if h.Principal != nil {
+		return h.Principal(r)
+	}
+	return appauthn.Principal{}, false
 }

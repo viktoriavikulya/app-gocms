@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	domaincontent "github.com/fastygo/app-gocms/internal/domain/content"
 	"github.com/fastygo/app-gocms/internal/domain/contenttype"
@@ -39,10 +40,28 @@ func bindContent(form url.Values, kind domaincontent.Kind, id domaincontent.ID) 
 			return domaincontent.Entry{}, fmt.Errorf("invalid metadata json")
 		}
 	}
-	if raw := form.Get("term_ids"); raw != "" {
+	if terms := form["taxonomy_term_ids"]; len(terms) > 0 {
+		entry.TermIDs = append([]string{}, terms...)
+	} else if raw := form.Get("taxonomy_term_ids"); raw != "" {
+		entry.TermIDs = splitCSV(raw)
+	} else if raw := form.Get("term_ids"); raw != "" {
 		entry.TermIDs = splitCSV(raw)
 	}
+	if raw := strings.TrimSpace(firstValue(form, "scheduled_at", "scheduled_for", "publish_at")); raw != "" {
+		if when, err := time.Parse("2006-01-02T15:04", raw); err == nil {
+			entry.ScheduledFor = when.UTC()
+		}
+	}
 	return entry, nil
+}
+
+func firstValue(form url.Values, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(form.Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func bindTaxonomy(form url.Values) (taxonomy.Definition, error) {

@@ -90,6 +90,7 @@ func NewSeededMemoryStore() (*MemoryStore, error) {
 	}{
 		{id: "admin", email: "admin@example.test", password: "admin", roles: []string{RoleAdmin}},
 		{id: "editor", email: "editor@example.test", password: "editor", roles: []string{RoleEditor}},
+		{id: "author", email: "author@example.test", password: "author", roles: []string{RoleAuthor}},
 		{id: "viewer", email: "viewer@example.test", password: "viewer", roles: []string{RoleViewer}},
 	} {
 		hash, err := service.hasher.Hash(seed.password)
@@ -248,53 +249,156 @@ func (s Service) AuthenticateAppToken(_ context.Context, raw string) (Principal,
 
 func BuiltInRoles() map[string][]contracts.CapabilityID {
 	return map[string][]contracts.CapabilityID{
-		RoleAdmin: {
-			capabilityAdminAccess,
-			capabilityContentRead,
-			capabilityContentWrite,
-			capabilityContentPrivate,
-			capabilityMediaUpload,
-			capabilityMediaEdit,
-			capabilityTaxonomyManage,
-			capabilityTaxonomyAssign,
-			capabilityUsersManage,
-			capabilitySettingsManage,
-		},
+		RoleAdmin: allAdminCapabilities(),
 		RoleEditor: {
 			capabilityAdminAccess,
 			capabilityContentRead,
 			capabilityContentWrite,
+			capabilityContentCreate,
+			capabilityContentEdit,
+			capabilityContentEditOwn,
+			capabilityContentEditOthers,
+			capabilityContentPublish,
+			capabilityContentSchedule,
+			capabilityContentArchive,
+			capabilityContentDelete,
+			capabilityContentRestore,
+			capabilityContentManageRevisions,
 			capabilityContentPrivate,
 			capabilityMediaUpload,
 			capabilityMediaEdit,
+			capabilityMediaDelete,
 			capabilityTaxonomyAssign,
+			capabilityRESTAccess,
+			capabilityRESTAccessPrivate,
+			capabilityRESTWrite,
+		},
+		RoleAuthor: {
+			capabilityAdminAccess,
+			capabilityContentRead,
+			capabilityContentCreate,
+			capabilityContentEditOwn,
+			capabilityContentPublish,
+			capabilityContentSchedule,
+			capabilityContentPrivate,
+			capabilityMediaUpload,
+			capabilityRESTAccess,
+			capabilityRESTAccessPrivate,
+			capabilityRESTWrite,
+		},
+		RoleContributor: {
+			capabilityAdminAccess,
+			capabilityContentRead,
+			capabilityContentCreate,
+			capabilityContentEditOwn,
+			capabilityRESTAccess,
+			capabilityRESTWrite,
 		},
 		RoleViewer: {
 			capabilityAdminAccess,
 			capabilityContentRead,
-			capabilityContentPrivate,
+			capabilityRESTAccess,
 		},
+	}
+}
+
+func allAdminCapabilities() []contracts.CapabilityID {
+	return []contracts.CapabilityID{
+		capabilityAdminAccess,
+		capabilityContentRead,
+		capabilityContentWrite,
+		capabilityContentCreate,
+		capabilityContentEdit,
+		capabilityContentEditOwn,
+		capabilityContentEditOthers,
+		capabilityContentPublish,
+		capabilityContentSchedule,
+		capabilityContentArchive,
+		capabilityContentDelete,
+		capabilityContentRestore,
+		capabilityContentManageRevisions,
+		capabilityContentPrivate,
+		capabilityMediaUpload,
+		capabilityMediaEdit,
+		capabilityMediaDelete,
+		capabilityMediaReadPrivate,
+		capabilityTaxonomyManage,
+		capabilityTaxonomyAssign,
+		capabilityThemesView,
+		capabilityThemesActivate,
+		capabilityThemesManageSettings,
+		capabilityPluginsView,
+		capabilityPluginsInstall,
+		capabilityPluginsActivate,
+		capabilityPluginsDeactivate,
+		capabilityPluginsUninstall,
+		capabilityPluginsManageSettings,
+		capabilityUsersView,
+		capabilityUsersCreate,
+		capabilityUsersEdit,
+		capabilityUsersDelete,
+		capabilityUsersManage,
+		capabilityRolesView,
+		capabilityRolesManage,
+		capabilitySettingsView,
+		capabilitySettingsManage,
+		capabilityRESTAccess,
+		capabilityRESTAccessPrivate,
+		capabilityRESTWrite,
 	}
 }
 
 // Capability IDs mirror pkg/module/capabilities.go; kept local to avoid pulling panel/render deps into application/authn.
 const (
-	capabilityAdminAccess    contracts.CapabilityID = "admin.access"
-	capabilityContentRead    contracts.CapabilityID = "content.read"
-	capabilityContentWrite   contracts.CapabilityID = "content.write"
-	capabilityContentPrivate contracts.CapabilityID = "content.read_private"
-	capabilityMediaUpload    contracts.CapabilityID = "media.upload"
-	capabilityMediaEdit      contracts.CapabilityID = "media.edit"
-	capabilityTaxonomyManage contracts.CapabilityID = "taxonomies.manage"
-	capabilityTaxonomyAssign contracts.CapabilityID = "taxonomies.assign"
-	capabilityUsersManage    contracts.CapabilityID = "users.manage"
-	capabilitySettingsManage contracts.CapabilityID = "settings.manage"
+	capabilityAdminAccess            contracts.CapabilityID = "admin.access"
+	capabilityContentRead            contracts.CapabilityID = "content.read"
+	capabilityContentWrite           contracts.CapabilityID = "content.write"
+	capabilityContentCreate          contracts.CapabilityID = "content.create"
+	capabilityContentEdit            contracts.CapabilityID = "content.edit"
+	capabilityContentEditOwn         contracts.CapabilityID = "content.edit_own"
+	capabilityContentEditOthers      contracts.CapabilityID = "content.edit_others"
+	capabilityContentPublish         contracts.CapabilityID = "content.publish"
+	capabilityContentSchedule        contracts.CapabilityID = "content.schedule"
+	capabilityContentArchive         contracts.CapabilityID = "content.archive"
+	capabilityContentDelete          contracts.CapabilityID = "content.delete"
+	capabilityContentRestore         contracts.CapabilityID = "content.restore"
+	capabilityContentManageRevisions contracts.CapabilityID = "content.manage_revisions"
+	capabilityContentPrivate         contracts.CapabilityID = "content.read_private"
+	capabilityMediaUpload            contracts.CapabilityID = "media.upload"
+	capabilityMediaEdit              contracts.CapabilityID = "media.edit"
+	capabilityMediaDelete            contracts.CapabilityID = "media.delete"
+	capabilityMediaReadPrivate       contracts.CapabilityID = "media.read_private"
+	capabilityTaxonomyManage         contracts.CapabilityID = "taxonomies.manage"
+	capabilityTaxonomyAssign         contracts.CapabilityID = "taxonomies.assign"
+	capabilityThemesView             contracts.CapabilityID = "themes.view"
+	capabilityThemesActivate         contracts.CapabilityID = "themes.activate"
+	capabilityThemesManageSettings   contracts.CapabilityID = "themes.manage_settings"
+	capabilityPluginsView            contracts.CapabilityID = "plugins.view"
+	capabilityPluginsInstall         contracts.CapabilityID = "plugins.install"
+	capabilityPluginsActivate        contracts.CapabilityID = "plugins.activate"
+	capabilityPluginsDeactivate      contracts.CapabilityID = "plugins.deactivate"
+	capabilityPluginsUninstall       contracts.CapabilityID = "plugins.uninstall"
+	capabilityPluginsManageSettings contracts.CapabilityID = "plugins.manage_settings"
+	capabilityUsersView              contracts.CapabilityID = "users.view"
+	capabilityUsersCreate            contracts.CapabilityID = "users.create"
+	capabilityUsersEdit              contracts.CapabilityID = "users.edit"
+	capabilityUsersDelete            contracts.CapabilityID = "users.delete"
+	capabilityUsersManage            contracts.CapabilityID = "users.manage"
+	capabilityRolesView              contracts.CapabilityID = "roles.view"
+	capabilityRolesManage            contracts.CapabilityID = "roles.manage"
+	capabilitySettingsView           contracts.CapabilityID = "settings.view"
+	capabilitySettingsManage         contracts.CapabilityID = "settings.manage"
+	capabilityRESTAccess             contracts.CapabilityID = "rest.access"
+	capabilityRESTAccessPrivate      contracts.CapabilityID = "rest.access_private"
+	capabilityRESTWrite              contracts.CapabilityID = "rest.write"
 )
 
 const (
-	RoleAdmin  = "admin"
-	RoleEditor = "editor"
-	RoleViewer = "viewer"
+	RoleAdmin       = "admin"
+	RoleEditor      = "editor"
+	RoleAuthor      = "author"
+	RoleContributor = "contributor"
+	RoleViewer      = "viewer"
 )
 
 func principalForUser(user User) Principal {

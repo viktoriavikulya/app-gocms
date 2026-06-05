@@ -35,6 +35,10 @@ func (s *Store) Close(context.Context) error {
 	return s.db.Close()
 }
 
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 func (s *Store) WithinWorkspaceTx(ctx context.Context, workspace contracts.WorkspaceID, fn func(context.Context, contracts.StorageTx) error) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {

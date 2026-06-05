@@ -11,11 +11,15 @@ import (
 )
 
 type AuditEvent struct {
-	Action    string         `json:"action"`
-	Actor     string         `json:"actor"`
-	Resource  string         `json:"resource"`
-	Details   map[string]any `json:"details,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
+	ID           string         `json:"id,omitempty"`
+	WorkspaceID  string         `json:"workspace_id,omitempty"`
+	Action       string         `json:"action"`
+	Actor        string         `json:"actor"`
+	Resource     string         `json:"resource"`
+	ResourceType string         `json:"resource_type,omitempty"`
+	ResourceID   string         `json:"resource_id,omitempty"`
+	Details      map[string]any `json:"details,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
 }
 
 type ErrorRecord struct {

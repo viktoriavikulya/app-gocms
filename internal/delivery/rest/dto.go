@@ -9,6 +9,7 @@ import (
 
 	domaincontent "github.com/fastygo/app-gocms/internal/domain/content"
 	"github.com/fastygo/app-gocms/internal/domain/contenttype"
+	domainrevisions "github.com/fastygo/app-gocms/internal/domain/revisions"
 	"github.com/fastygo/app-gocms/internal/domain/media"
 	"github.com/fastygo/app-gocms/internal/domain/menus"
 	"github.com/fastygo/app-gocms/internal/domain/settings"
@@ -110,6 +111,13 @@ type MenuItemDTO struct {
 	Kind     string        `json:"kind,omitempty"`
 	TargetID string        `json:"target_id,omitempty"`
 	Children []MenuItemDTO `json:"children,omitempty"`
+}
+
+type RevisionDTO struct {
+	ID        string     `json:"id"`
+	EntryID   string     `json:"entry_id"`
+	Snapshot  ContentDTO `json:"snapshot"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type MediaResolver interface {
@@ -422,4 +430,21 @@ func resolveAvatarURL(ctx context.Context, resolver MediaResolver, avatarID stri
 		return ""
 	}
 	return asset.PublicURL
+}
+
+func RevisionProjection(revision domainrevisions.Revision, includePrivate bool) RevisionDTO {
+	return RevisionDTO{
+		ID:        revision.ID,
+		EntryID:   string(revision.EntryID),
+		Snapshot:  ContentProjection(revision.Entry, includePrivate),
+		CreatedAt: revision.CreatedAt,
+	}
+}
+
+func projectRevisions(items []domainrevisions.Revision, includePrivate bool) []RevisionDTO {
+	result := make([]RevisionDTO, 0, len(items))
+	for _, item := range items {
+		result = append(result, RevisionProjection(item, includePrivate))
+	}
+	return result
 }

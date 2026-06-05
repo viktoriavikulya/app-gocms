@@ -3,9 +3,11 @@ package media
 import (
 	"context"
 	"fmt"
+	"time"
 
 	domaincontent "github.com/fastygo/app-gocms/internal/domain/content"
 	domainmedia "github.com/fastygo/app-gocms/internal/domain/media"
+	"github.com/fastygo/app-gocms/internal/extensions"
 )
 
 type Repository interface {
@@ -22,17 +24,47 @@ type EntryRepository interface {
 type Service struct {
 	repo    Repository
 	entries EntryRepository
+	hooks   *extensions.HookBus
+	now     func() time.Time
 }
 
 func NewService(repo Repository, entries EntryRepository) Service {
-	return Service{repo: repo, entries: entries}
+	return Service{repo: repo, entries: entries, now: time.Now}
+}
+
+func (s Service) WithHooks(bus *extensions.HookBus) Service {
+	s.hooks = bus
+	return s
 }
 
 func (s Service) SaveMetadata(ctx context.Context, asset domainmedia.Asset) error {
 	if asset.ID == "" {
 		return fmt.Errorf("media asset id is required")
 	}
-	return s.repo.SaveAsset(ctx, asset)
+	if err := s.repo.SaveAsset(ctx, asset); err != nil {
+		return err
+	}
+	return s.dispatch(ctx, extensions.HookMediaUploadAfter, asset)
+}
+
+func (s Service) Delete(ctx context.Context, id string) error {
+	asset, ok, err := s.repo.GetAsset(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("media asset %q not found", id)
+	}
+	if err := s.dispatch(ctx, extensions.HookMediaDeleteBefore, asset); err != nil {
+		return err
+	}
+	// Metadata-only delete: overwrite with empty marker via save is not ideal; repo has no Delete on media adapter.
+	// For now mark as trashed in metadata.
+	asset.Metadata = map[string]any{"deleted": true}
+	if err := s.repo.SaveAsset(ctx, asset); err != nil {
+		return err
+	}
+	return s.dispatch(ctx, extensions.HookMediaDeleteAfter, asset)
 }
 
 func (s Service) Get(ctx context.Context, id string) (domainmedia.Asset, bool, error) {
@@ -99,4 +131,11 @@ func (s Service) AttachFeatured(ctx context.Context, entryID domaincontent.ID, a
 	}
 	entry.FeaturedMediaID = assetID
 	return entry, s.entries.Save(ctx, entry)
+}
+
+func (s Service) dispatch(ctx context.Context, hook string, entity any) error {
+	if s.hooks == nil {
+		return nil
+	}
+	return s.hooks.Dispatch(ctx, hook, extensions.HookPayload{Hook: hook, Entity: entity, OccurredAt: s.now().UTC()})
 }

@@ -2,12 +2,14 @@ package content_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	appcontent "github.com/fastygo/app-gocms/internal/application/content"
 	appcontenttype "github.com/fastygo/app-gocms/internal/application/contenttype"
 	"github.com/fastygo/app-gocms/internal/domain/content"
+	"github.com/fastygo/app-gocms/internal/extensions"
 	"github.com/fastygo/app-gocms/internal/storage"
 	"github.com/fastygo/platform/pkg/contracts/contractstest"
 )
@@ -82,6 +84,47 @@ func TestContentGetBySlugAndListFiltered(t *testing.T) {
 		}
 		if len(items) != 1 || items[0].ID != "pub" {
 			t.Fatalf("ListFiltered = %#v", items)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContentHooksFireAndAbortBeforeMutation(t *testing.T) {
+	provider := storage.NewProvider(contractstest.NewMemoryStorage())
+	bus := extensions.NewHookBus()
+	var beforeCount int
+	bus.AddAction(extensions.HookContentCreateBefore, extensions.ActionHandler{
+		ID: "count", Handle: func(context.Context, any) error {
+			beforeCount++
+			return nil
+		},
+	})
+	err := provider.ForWorkspace("root").WithinTx(context.Background(), func(ctx context.Context, repos storage.Repositories) error {
+		appRepos := storage.NewApplicationRepositories(repos)
+		if err := appcontenttype.NewService(appRepos).InstallBuiltIns(ctx); err != nil {
+			return err
+		}
+		service := appcontent.NewService(appRepos, appRepos).WithHooks(bus)
+		if _, err := service.CreateDraft(ctx, content.Entry{ID: "hooked", Kind: content.KindPost, Title: map[string]string{"en": "Hook"}, Slug: "hook"}); err != nil {
+			return err
+		}
+		if beforeCount != 1 {
+			t.Fatalf("before hook count = %d", beforeCount)
+		}
+		bus.AddAction(extensions.HookContentUpdateBefore, extensions.ActionHandler{
+			ID: "fail", Handle: func(context.Context, any) error { return errors.New("blocked") },
+		})
+		entry, _, _ := service.Get(ctx, "hooked")
+		entry.Content = "changed"
+		if err := service.Update(ctx, entry); err == nil {
+			t.Fatal("expected failing before hook to abort update")
+		}
+		stored, ok, _ := service.Get(ctx, "hooked")
+		if !ok || stored.Content != "" {
+			t.Fatalf("update should roll back content, got %#v", stored)
 		}
 		return nil
 	})

@@ -12,7 +12,10 @@ const (
 	RecordMediaAsset         toolset.RecordTypeID = "media_asset"
 	RecordAuthor             toolset.RecordTypeID = "author"
 	CapabilityContentRead    toolset.CapabilityID = "content.read"
-	CapabilityContentWrite   toolset.CapabilityID = "content.write"
+	CapabilityContentWrite   toolset.CapabilityID = "content.write" // deprecated compat alias
+	CapabilityContentCreate  toolset.CapabilityID = "content.create"
+	CapabilityContentEditOwn toolset.CapabilityID = "content.edit_own"
+	CapabilityContentDelete  toolset.CapabilityID = "content.delete"
 	CapabilityContentPrivate toolset.CapabilityID = "content.read_private"
 	CapabilityMediaUpload    toolset.CapabilityID = "media.upload"
 	CapabilityMediaEdit      toolset.CapabilityID = "media.edit"
@@ -183,6 +186,7 @@ func contentRecord(id toolset.RecordTypeID, label string, permalink string) tool
 			{ID: "visibility", Label: "Visibility", Type: toolset.FieldSelect, Required: true, Indexed: true, Options: visibilityOptions()},
 			{ID: "author_id", Label: "Author", Type: toolset.FieldRelation, Indexed: true},
 			{ID: "featured_media_id", Label: "Featured media", Type: toolset.FieldRelation, Indexed: true},
+			{ID: "taxonomy_term_ids", Label: "Categories", Type: toolset.FieldText, Description: "Comma-separated taxonomy term IDs."},
 			{ID: "metadata", Label: "Metadata", Type: toolset.FieldJSON, Description: "Content metadata with public/private projection rules."},
 			{ID: "permalink", Label: "Permalink", Type: toolset.FieldText, DefaultValue: permalink},
 			{ID: "published_at", Label: "Published at", Type: toolset.FieldDateTime, Indexed: true},
@@ -190,7 +194,7 @@ func contentRecord(id toolset.RecordTypeID, label string, permalink string) tool
 			{ID: "created_at", Label: "Created at", Type: toolset.FieldDateTime, Indexed: true},
 			{ID: "updated_at", Label: "Updated at", Type: toolset.FieldDateTime, Indexed: true},
 		},
-		Capabilities: []toolset.CapabilityID{CapabilityContentRead, CapabilityContentWrite, CapabilityContentPrivate},
+		Capabilities: []toolset.CapabilityID{CapabilityContentRead, CapabilityContentCreate, CapabilityContentEditOwn, CapabilityContentDelete, CapabilityContentPrivate},
 		Visibility:   "public",
 	}
 }

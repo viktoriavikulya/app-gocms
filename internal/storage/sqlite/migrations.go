@@ -69,6 +69,24 @@ func sqliteMigrations() []migration {
 				`CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_workspace_identifier ON auth_login_attempts(workspace_id, identifier, created_at)`,
 			},
 		},
+		{
+			Version:     "0003_audit_events",
+			Description: "create workspace-scoped audit event log",
+			Statements: []string{
+				`CREATE TABLE IF NOT EXISTS audit_events (
+					workspace_id TEXT NOT NULL,
+					id TEXT NOT NULL,
+					actor_id TEXT NOT NULL DEFAULT '',
+					action TEXT NOT NULL,
+					resource_type TEXT NOT NULL DEFAULT '',
+					resource_id TEXT NOT NULL DEFAULT '',
+					details_json TEXT NOT NULL DEFAULT '{}',
+					created_at TEXT NOT NULL,
+					PRIMARY KEY(workspace_id, id)
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_events_workspace_created ON audit_events(workspace_id, created_at DESC)`,
+			},
+		},
 	}
 }
 

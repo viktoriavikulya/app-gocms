@@ -203,6 +203,20 @@ func (a ApplicationRepositories) GetRevision(ctx context.Context, id string) (re
 	return get[revisions.Revision](ctx, a.repos.Revisions, contracts.RecordID(id))
 }
 
+func (a ApplicationRepositories) ListRevisionsByEntry(ctx context.Context, entryID domaincontent.ID) ([]revisions.Revision, error) {
+	items, err := list[revisions.Revision](ctx, a.repos.Revisions)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]revisions.Revision, 0, len(items))
+	for _, item := range items {
+		if item.EntryID == entryID {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
 func (a ApplicationRepositories) SavePreview(ctx context.Context, access preview.Access) error {
 	return put(ctx, a.repos.Previews, contracts.RecordID(access.Token), access)
 }

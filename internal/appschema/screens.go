@@ -60,6 +60,7 @@ func NewRegistry() (*Registry, error) {
 	registry.Special["/go-admin/settings/new"] = settingsScreen("/go-admin/settings")
 	registry.Special["/go-admin/menus"] = menusScreen("/go-admin/menus")
 	registry.Special["/go-admin/menus/new"] = menusScreen("/go-admin/menus")
+	registry.Special["/go-admin/runtime"] = runtimeScreen("/go-admin/runtime")
 	return registry, nil
 }
 
@@ -118,6 +119,23 @@ func settingsScreen(path string) render.ScreenModel {
 		Fields: []panel.Field{
 			{ID: "site.title", Label: "Site title", Type: panel.FieldText, Required: true},
 			{ID: "site.description", Label: "Site description", Type: panel.FieldTextarea},
+		},
+		Metadata: screenMetadata(path, "setting"),
+	}
+}
+
+func runtimeScreen(path string) render.ScreenModel {
+	return render.ScreenModel{
+		ID:       "admin-runtime",
+		Title:    "Runtime",
+		View:     render.ViewTable,
+		Resource: "runtime",
+		Record:   "audit_event",
+		Columns: []panel.Column{
+			{ID: "action", Label: "Action"},
+			{ID: "actor", Label: "Actor"},
+			{ID: "resource", Label: "Resource"},
+			{ID: "created_at", Label: "When"},
 		},
 		Metadata: screenMetadata(path, "setting"),
 	}

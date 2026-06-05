@@ -16,6 +16,7 @@ import (
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/delivery/admin"
 	"github.com/fastygo/app-gocms/internal/delivery/publicsite"
 	"github.com/fastygo/app-gocms/internal/delivery/rest"
 	"github.com/fastygo/app-gocms/internal/extensions"
@@ -156,6 +157,7 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 		})
 		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(authBoundary.renderAdminDashboard(registry)))
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
+		admin.NewHandler(provider, "root", authBoundary, authBoundary).Register(mux)
 	}
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
 	runtime, err := extensionRuntime(provider, mode)
@@ -312,7 +314,7 @@ func (a authBoundary) completeLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
-	if !a.validActionToken(r.FormValue("action_token"), "login") {
+	if !a.ValidActionToken(r.FormValue("action_token"), "login") {
 		http.Error(w, "invalid action token", http.StatusForbidden)
 		return
 	}
@@ -335,7 +337,7 @@ func (a authBoundary) completeLogin(w http.ResponseWriter, r *http.Request) {
 func (a authBoundary) completeLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		_ = r.ParseForm()
-		if token := r.FormValue("action_token"); token != "" && !a.validActionToken(token, "logout") {
+		if token := r.FormValue("action_token"); token != "" && !a.ValidActionToken(token, "logout") {
 			http.Error(w, "invalid action token", http.StatusForbidden)
 			return
 		}
@@ -368,6 +370,10 @@ func (a authBoundary) Authorize(r *http.Request, capability contracts.Capability
 	return true, principal.Has(capability)
 }
 
+func (a authBoundary) Principal(r *http.Request) (appauthn.Principal, bool) {
+	return a.principalFromRequest(r)
+}
+
 func (a authBoundary) principalFromRequest(r *http.Request) (appauthn.Principal, bool) {
 	if claims, ok := a.session.Read(r); ok && claims.PrincipalID != "" {
 		if principal, found := a.service.Principal(contracts.PrincipalID(claims.PrincipalID)); found {
@@ -385,7 +391,7 @@ func (a authBoundary) actionToken(action string, ttl time.Duration) (string, err
 	return frameworkauth.SignedEncode(actionToken{Action: action, Exp: time.Now().Add(ttl).Unix()}, a.secret)
 }
 
-func (a authBoundary) validActionToken(raw string, action string) bool {
+func (a authBoundary) ValidActionToken(raw string, action string) bool {
 	var token actionToken
 	if err := frameworkauth.SignedDecode(raw, a.secret, &token); err != nil {
 		return false

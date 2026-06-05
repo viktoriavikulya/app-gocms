@@ -199,7 +199,7 @@ func screenMetadata(path string, record toolset.RecordTypeID) map[string]string 
 		"new_path":    strings.TrimRight(path, "/") + "/new",
 		"list_path":   path,
 		"list_api":    "/go-json/go/v2/" + collectionForRecord(record),
-		"form_action": "/go-json/go/v2/" + collectionForRecord(record),
+		"form_action": "/go-admin/" + adminCollectionForRecord(record),
 	}
 }
 
@@ -240,8 +240,34 @@ func (r *Registry) taxonomyTermsScreen(taxonomyType string, isNew bool) (render.
 		screen = render.ResourceTableScreen(binding.Resource, binding.Record)
 	}
 	screen.Metadata = screenMetadata(basePath, binding.Record.ID)
+	screen.Metadata["form_action"] = basePath
 	screen.Metadata["taxonomy_type"] = taxonomyType
 	return screen, nil
+}
+
+func adminCollectionForRecord(id toolset.RecordTypeID) string {
+	switch id {
+	case "post":
+		return "posts"
+	case "page":
+		return "pages"
+	case "media_asset":
+		return "media"
+	case "taxonomy":
+		return "taxonomies"
+	case "term":
+		return "terms"
+	case "content_type":
+		return "content-types"
+	case "author":
+		return "authors"
+	case "setting":
+		return "settings"
+	case "menu":
+		return "menus"
+	default:
+		return string(id) + "s"
+	}
 }
 
 func collectionForRecord(id toolset.RecordTypeID) string {

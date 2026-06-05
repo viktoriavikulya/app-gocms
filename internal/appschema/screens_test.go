@@ -22,7 +22,7 @@ func TestScreensUsePlatformRendererModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if form.View != render.ViewForm || form.Metadata["form_action"] != "/go-json/go/v2/posts" || len(form.Fields) == 0 {
+	if form.View != render.ViewForm || form.Metadata["form_action"] != "/go-admin/posts" || len(form.Fields) == 0 {
 		t.Fatalf("unexpected form screen: %#v", form)
 	}
 }
@@ -48,5 +48,8 @@ func TestTaxonomyTypeTermsPathResolves(t *testing.T) {
 	}
 	if form.View != render.ViewForm || form.Metadata["taxonomy_type"] != "category" {
 		t.Fatalf("unexpected taxonomy terms form: %#v", form)
+	}
+	if form.Metadata["form_action"] != "/go-admin/taxonomies/category/terms" {
+		t.Fatalf("unexpected form_action: %#v", form.Metadata)
 	}
 }

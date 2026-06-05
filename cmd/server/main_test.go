@@ -63,15 +63,14 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 		t.Fatalf("expected v2 discovery OK, got %d", response.Code)
 	}
 	var discovery struct {
-		Routes []struct {
-			Path string `json:"path"`
-		} `json:"routes"`
+		Version string            `json:"version"`
+		Routes  map[string]string `json:"routes"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &discovery); err != nil {
 		t.Fatalf("decode discovery: %v", err)
 	}
-	if len(discovery.Routes) == 0 {
-		t.Fatalf("expected v2 routes")
+	if discovery.Version != "2" || discovery.Routes["posts"] == "" {
+		t.Fatalf("expected v2 map routes, got %#v", discovery)
 	}
 
 	response = httptest.NewRecorder()

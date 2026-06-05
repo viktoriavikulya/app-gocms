@@ -43,6 +43,46 @@ func (s Service) List(ctx context.Context) ([]domainmedia.Asset, error) {
 	return s.repo.ListAssets(ctx)
 }
 
+func (s Service) Update(ctx context.Context, asset domainmedia.Asset) error {
+	if asset.ID == "" {
+		return fmt.Errorf("media asset id is required")
+	}
+	existing, ok, err := s.repo.GetAsset(ctx, asset.ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("media asset %q not found", asset.ID)
+	}
+	merged := mergeMedia(existing, asset)
+	return s.repo.SaveAsset(ctx, merged)
+}
+
+func mergeMedia(existing, patch domainmedia.Asset) domainmedia.Asset {
+	if patch.Title != "" {
+		existing.Title = patch.Title
+	}
+	if patch.MIMEType != "" {
+		existing.MIMEType = patch.MIMEType
+	}
+	if patch.AltText != "" {
+		existing.AltText = patch.AltText
+	}
+	if patch.PublicURL != "" {
+		existing.PublicURL = patch.PublicURL
+	}
+	if patch.ProviderRef != "" {
+		existing.ProviderRef = patch.ProviderRef
+	}
+	if patch.Metadata != nil {
+		existing.Metadata = patch.Metadata
+	}
+	if patch.Variants != nil {
+		existing.Variants = patch.Variants
+	}
+	return existing
+}
+
 func (s Service) AttachFeatured(ctx context.Context, entryID domaincontent.ID, assetID string) (domaincontent.Entry, error) {
 	if _, ok, err := s.repo.GetAsset(ctx, assetID); err != nil || !ok {
 		if err != nil {

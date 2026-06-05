@@ -136,6 +136,14 @@ func (a ApplicationRepositories) GetDefinition(ctx context.Context, taxonomyType
 	return get[taxonomy.Definition](ctx, a.repos.Taxonomies, contracts.RecordID(taxonomyType))
 }
 
+func (a ApplicationRepositories) ListDefinitions(ctx context.Context) ([]taxonomy.Definition, error) {
+	return list[taxonomy.Definition](ctx, a.repos.Taxonomies)
+}
+
+func (a ApplicationRepositories) GetTerm(ctx context.Context, id string) (taxonomy.Term, bool, error) {
+	return get[taxonomy.Term](ctx, a.repos.Terms, contracts.RecordID(id))
+}
+
 func (a ApplicationRepositories) SaveTerm(ctx context.Context, term taxonomy.Term) error {
 	return put(ctx, a.repos.Terms, contracts.RecordID(term.ID), term)
 }

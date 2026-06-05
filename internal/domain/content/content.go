@@ -49,6 +49,18 @@ type Query struct {
 	Status Status
 }
 
+func (e Entry) IsPublicAt(now time.Time) bool {
+	if e.Visibility != VisibilityPublic {
+		return false
+	}
+	switch e.Status {
+	case StatusPublished:
+		return e.PublishedAt.IsZero() || !e.PublishedAt.After(now)
+	default:
+		return false
+	}
+}
+
 func (e Entry) Validate() error {
 	if e.ID == "" {
 		return fmt.Errorf("content id is required")

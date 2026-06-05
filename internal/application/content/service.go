@@ -107,6 +107,40 @@ func (s Service) List(ctx context.Context, query domaincontent.Query) ([]domainc
 	return s.repo.List(ctx, query)
 }
 
+func (s Service) ListFiltered(ctx context.Context, query domaincontent.Query, publicOnly bool) ([]domaincontent.Entry, error) {
+	items, err := s.repo.List(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if !publicOnly {
+		return items, nil
+	}
+	return filterPublicEntries(items, s.now().UTC()), nil
+}
+
+func (s Service) GetBySlug(ctx context.Context, kind domaincontent.Kind, slug string, publicOnly bool) (domaincontent.Entry, bool, error) {
+	items, err := s.ListFiltered(ctx, domaincontent.Query{Kind: kind}, publicOnly)
+	if err != nil {
+		return domaincontent.Entry{}, false, err
+	}
+	for _, entry := range items {
+		if entry.Slug == slug {
+			return entry, true, nil
+		}
+	}
+	return domaincontent.Entry{}, false, nil
+}
+
+func filterPublicEntries(items []domaincontent.Entry, now time.Time) []domaincontent.Entry {
+	filtered := make([]domaincontent.Entry, 0, len(items))
+	for _, entry := range items {
+		if entry.IsPublicAt(now) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
 func (s Service) transitionStatus(ctx context.Context, id domaincontent.ID, status domaincontent.Status) (domaincontent.Entry, error) {
 	return s.transition(ctx, id, func(entry domaincontent.Entry) domaincontent.Entry {
 		entry.Status = status

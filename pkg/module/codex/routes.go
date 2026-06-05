@@ -1,16 +1,11 @@
 package codex
 
-type Route struct {
-	Methods []string `json:"methods"`
-	Path    string   `json:"path"`
-}
-
 type Discovery struct {
-	Name           string   `json:"name"`
-	Version        string   `json:"version"`
-	Routes         []Route  `json:"routes"`
-	Authentication []string `json:"authentication"`
-	Links          Links    `json:"links"`
+	Name           string            `json:"name"`
+	Version        string            `json:"version"`
+	Routes         map[string]string `json:"routes"`
+	Authentication []string          `json:"authentication"`
+	Links          Links             `json:"links"`
 }
 
 type Links struct {
@@ -50,12 +45,11 @@ type ErrorBody struct {
 func RootDiscovery() Discovery {
 	return Discovery{
 		Name:           "GoCMS",
-		Version:        "go-codex.v0.1",
+		Version:        "2",
 		Authentication: []string{"browser_session", "app_token", "dev_bearer"},
 		Links:          Links{Self: "/go-json", Namespace: "/go-json/go/v2/", Admin: "/go-admin"},
-		Routes: []Route{
-			{Methods: []string{"GET"}, Path: "/go-json"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/"},
+		Routes: map[string]string{
+			"go/v2": "/go-json/go/v2/",
 		},
 	}
 }
@@ -63,22 +57,20 @@ func RootDiscovery() Discovery {
 func V2Discovery() Discovery {
 	return Discovery{
 		Name:           "GoCMS REST API",
-		Version:        "go/v2",
+		Version:        "2",
 		Authentication: []string{"browser_session", "app_token", "dev_bearer"},
 		Links:          Links{Self: "/go-json/go/v2/", Admin: "/go-admin"},
-		Routes: []Route{
-			{Methods: []string{"GET", "POST"}, Path: "/go-json/go/v2/posts"},
-			{Methods: []string{"GET", "PATCH", "DELETE"}, Path: "/go-json/go/v2/posts/{id}"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/posts/by-slug/{slug}"},
-			{Methods: []string{"GET", "POST"}, Path: "/go-json/go/v2/pages"},
-			{Methods: []string{"GET", "PATCH", "DELETE"}, Path: "/go-json/go/v2/pages/{id}"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/pages/by-slug/{slug}"},
-			{Methods: []string{"GET", "POST"}, Path: "/go-json/go/v2/media"},
-			{Methods: []string{"GET", "POST"}, Path: "/go-json/go/v2/taxonomies"},
-			{Methods: []string{"GET", "POST"}, Path: "/go-json/go/v2/taxonomies/{type}/terms"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/authors/{id}"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/search"},
-			{Methods: []string{"GET"}, Path: "/go-json/go/v2/settings"},
+		Routes: map[string]string{
+			"posts":         "/go-json/go/v2/posts",
+			"pages":         "/go-json/go/v2/pages",
+			"contentTypes":  "/go-json/go/v2/content-types",
+			"media":         "/go-json/go/v2/media",
+			"taxonomies":    "/go-json/go/v2/taxonomies",
+			"authors":       "/go-json/go/v2/authors",
+			"menus":         "/go-json/go/v2/menus",
+			"settings":      "/go-json/go/v2/settings",
+			"search":        "/go-json/go/v2/search",
+			"content":       "/go-json/go/v2/content",
 		},
 	}
 }

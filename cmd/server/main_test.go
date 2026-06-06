@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +20,9 @@ import (
 	"github.com/fastygo/app-gocms/internal/appschema"
 	gocmsapp "github.com/fastygo/app-gocms/pkg/app"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	"github.com/fastygo/platform/pkg/bff"
 	"github.com/fastygo/platform/pkg/contracts"
+	"github.com/fastygo/platform/pkg/render"
 )
 
 func TestCodexRouteSurfaces(t *testing.T) {
@@ -394,6 +398,94 @@ func TestRuntimeProfileModesGateSurfaces(t *testing.T) {
 	conformanceHandler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Hello world") {
 		t.Fatalf("conformance mode should keep deterministic seeded public fixture, got %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestBFFScreenJSONMatchesInProcessModel(t *testing.T) {
+	handler, store := testHandlerWithAuthStore(t)
+	registry, err := appschema.NewRegistry()
+	if err != nil {
+		t.Fatalf("build registry: %v", err)
+	}
+	principal, ok := appauthn.NewService(store).Principal(contracts.PrincipalID("admin"))
+	if !ok {
+		t.Fatal("expected admin principal")
+	}
+	expected, err := registry.Page(context.Background(), "/go-admin/posts", principal)
+	if err != nil {
+		t.Fatalf("resolve in-process page: %v", err)
+	}
+
+	cookie := loginCookie(t, handler, "admin", "admin")
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodGet, "/bff/screens/go-admin/posts")
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("/bff/screens/go-admin/posts returned %d: %s", response.Code, response.Body.String())
+	}
+	var got render.ScreenModel
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode bff screen: %v", err)
+	}
+	if !reflect.DeepEqual(got, expected.Screen) {
+		t.Fatalf("json screen mismatch:\n got: %#v\nwant: %#v", got, expected.Screen)
+	}
+}
+
+func TestBFFNavAndSessionJSON(t *testing.T) {
+	handler, store := testHandlerWithAuthStore(t)
+	registry, err := appschema.NewRegistry()
+	if err != nil {
+		t.Fatalf("build registry: %v", err)
+	}
+	principal, ok := appauthn.NewService(store).Principal(contracts.PrincipalID("admin"))
+	if !ok {
+		t.Fatal("expected admin principal")
+	}
+	expectedPage, err := registry.DashboardPage(context.Background(), principal)
+	if err != nil {
+		t.Fatalf("resolve dashboard page: %v", err)
+	}
+
+	cookie := loginCookie(t, handler, "admin", "admin")
+	navResponse := httptest.NewRecorder()
+	navRequest := testRequest(http.MethodGet, "/bff/nav")
+	navRequest.AddCookie(cookie)
+	handler.ServeHTTP(navResponse, navRequest)
+	if navResponse.Code != http.StatusOK {
+		t.Fatalf("/bff/nav returned %d: %s", navResponse.Code, navResponse.Body.String())
+	}
+	var gotNav bff.NavigationModel
+	if err := json.Unmarshal(navResponse.Body.Bytes(), &gotNav); err != nil {
+		t.Fatalf("decode bff nav: %v", err)
+	}
+	if !reflect.DeepEqual(gotNav, expectedPage.Navigation) {
+		t.Fatalf("json nav mismatch:\n got: %#v\nwant: %#v", gotNav, expectedPage.Navigation)
+	}
+
+	sessionResponse := httptest.NewRecorder()
+	sessionRequest := testRequest(http.MethodGet, "/bff/session")
+	sessionRequest.AddCookie(cookie)
+	handler.ServeHTTP(sessionResponse, sessionRequest)
+	if sessionResponse.Code != http.StatusOK {
+		t.Fatalf("/bff/session returned %d: %s", sessionResponse.Code, sessionResponse.Body.String())
+	}
+	var gotSession bff.SessionModel
+	if err := json.Unmarshal(sessionResponse.Body.Bytes(), &gotSession); err != nil {
+		t.Fatalf("decode bff session: %v", err)
+	}
+	if !gotSession.Authenticated || gotSession.PrincipalID != "admin" || gotSession.ProfileID != "gocms-admin" {
+		t.Fatalf("unexpected session payload: %#v", gotSession)
+	}
+	if !principal.Has(modulecms.CapabilityAdminAccess) {
+		t.Fatal("expected admin capability on principal")
+	}
+
+	unauth := httptest.NewRecorder()
+	handler.ServeHTTP(unauth, testRequest(http.MethodGet, "/bff/screens/go-admin/posts"))
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated bff 401, got %d", unauth.Code)
 	}
 }
 

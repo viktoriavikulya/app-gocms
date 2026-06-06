@@ -149,6 +149,7 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 	mux.HandleFunc("POST /go-login", authBoundary.completeLogin)
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
+	registerBFFRoutes(mux, registry, authBoundary)
 	if mode != RuntimeModeHeadless {
 		mux.HandleFunc("GET /go-admin/{$}", authBoundary.renderAdminDashboard(registry))
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))

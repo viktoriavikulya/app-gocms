@@ -154,11 +154,13 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
 	}
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
-	runtime, err := extensionRuntime(provider, mode)
-	if err != nil {
-		panic(err)
+	if mode != RuntimeModeAdmin {
+		runtime, err := extensionRuntime(provider, mode)
+		if err != nil {
+			panic(err)
+		}
+		runtime.RegisterRoutes(mux, authBoundary.Authorize)
 	}
-	runtime.RegisterRoutes(mux, authBoundary.Authorize)
 	if mode != RuntimeModeHeadless && mode != RuntimeModeAdmin {
 		mux.Handle("GET /posts/{slug}", public)
 		mux.Handle("GET /{slug}", public)
@@ -449,7 +451,7 @@ func runtimeMode(options Options) RuntimeMode {
 	if options.RuntimeMode != "" {
 		return options.RuntimeMode
 	}
-	return RuntimeModeFull
+	return RuntimeModeAdmin
 }
 
 func extensionRuntime(provider storage.StoreProvider, mode RuntimeMode) (*extensions.Runtime, error) {

@@ -2,10 +2,10 @@ package appschema
 
 import (
 	"fmt"
-	"strings"
 
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
+	"github.com/fastygo/platform/pkg/bff"
 	"github.com/fastygo/platform/pkg/contracts"
 	"github.com/fastygo/platform/pkg/contracts/contractstest"
 	"github.com/fastygo/platform/pkg/modulehost"
@@ -17,13 +17,8 @@ import (
 
 type Registry struct {
 	Assembly modulehost.WorkspaceAssembly
-	ByPath   map[string]ResourceBinding
+	resolver bff.Resolver
 	Special  map[string]render.ScreenModel
-}
-
-type ResourceBinding struct {
-	Resource panel.Resource[contracts.CapabilityID]
-	Record   toolset.RecordTypeDefinition
 }
 
 func NewRegistry() (*Registry, error) {
@@ -47,19 +42,22 @@ func NewRegistry() (*Registry, error) {
 	if len(assemblies) == 0 {
 		return nil, fmt.Errorf("profile assembled without workspaces")
 	}
-	registry := &Registry{Assembly: assemblies[0], ByPath: map[string]ResourceBinding{}, Special: map[string]render.ScreenModel{}}
-	records := recordsByID(registry.Assembly.Context.Records)
-	for _, resource := range registry.Assembly.Context.Resources {
-		record, ok := records[toolset.RecordTypeID(resource.ID)]
-		if !ok {
-			record = toolset.RecordTypeDefinition{ID: toolset.RecordTypeID(resource.ID), Label: resource.Label}
-		}
-		registry.ByPath[resource.BasePath] = ResourceBinding{Resource: resource, Record: record}
+	special := map[string]render.ScreenModel{
+		"/go-admin/settings":     settingsScreen("/go-admin/settings"),
+		"/go-admin/settings/new": settingsScreen("/go-admin/settings"),
+		"/go-admin/menus":        menusScreen("/go-admin/menus"),
+		"/go-admin/menus/new":    menusScreen("/go-admin/menus"),
 	}
-	registry.Special["/go-admin/settings"] = settingsScreen("/go-admin/settings")
-	registry.Special["/go-admin/settings/new"] = settingsScreen("/go-admin/settings")
-	registry.Special["/go-admin/menus"] = menusScreen("/go-admin/menus")
-	registry.Special["/go-admin/menus/new"] = menusScreen("/go-admin/menus")
+	registry := &Registry{
+		Assembly: assemblies[0],
+		Special:  special,
+		resolver: bff.NewResolver(bff.Options{
+			Bases:    bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
+			Bindings: bff.BindingsFromAssembly(assemblies[0]),
+			Special:  special,
+			Metadata: cmsMetadata().Metadata,
+		}),
+	}
 	return registry, nil
 }
 
@@ -72,37 +70,7 @@ func MustRegistry() *Registry {
 }
 
 func (r *Registry) Screen(path string) (render.ScreenModel, error) {
-	if screen, ok := r.Special[strings.TrimRight(path, "/")]; ok {
-		return screen, nil
-	}
-	trimmed := strings.TrimRight(path, "/")
-	if strings.HasSuffix(trimmed, "/new") {
-		base := strings.TrimSuffix(trimmed, "/new")
-		if binding, ok := r.ByPath[base]; ok {
-			screen := render.ResourceFormScreen(binding.Resource, binding.Record)
-			screen.Metadata = screenMetadata(base, binding.Record.ID)
-			return screen, nil
-		}
-	}
-	if strings.HasSuffix(trimmed, "/edit") {
-		base := strings.TrimSuffix(trimmed, "/edit")
-		if idx := strings.LastIndex(base, "/"); idx >= 0 {
-			base = base[:idx]
-		}
-		if binding, ok := r.ByPath[base]; ok {
-			screen := render.ResourceFormScreen(binding.Resource, binding.Record)
-			screen.ID = string(binding.Resource.ID) + "-edit"
-			screen.Title = "Edit " + binding.Resource.Singular
-			screen.Metadata = screenMetadata(base, binding.Record.ID)
-			return screen, nil
-		}
-	}
-	if binding, ok := r.ByPath[path]; ok {
-		screen := render.ResourceTableScreen(binding.Resource, binding.Record)
-		screen.Metadata = screenMetadata(path, binding.Record.ID)
-		return screen, nil
-	}
-	return render.ScreenModel{}, fmt.Errorf("unknown screen path %q", path)
+	return r.resolver.Screen(path)
 }
 
 func settingsScreen(path string) render.ScreenModel {
@@ -116,7 +84,7 @@ func settingsScreen(path string) render.ScreenModel {
 			{ID: "site.title", Label: "Site title", Type: panel.FieldText, Required: true},
 			{ID: "site.description", Label: "Site description", Type: panel.FieldTextarea},
 		},
-		Metadata: screenMetadata(path, "setting"),
+		Metadata: cmsMetadata().Metadata(bff.ScreenContext{Path: path, Base: path, Record: "setting", Variant: bff.VariantSpecial}),
 	}
 }
 
@@ -132,21 +100,12 @@ func menusScreen(path string) render.ScreenModel {
 			{ID: "location", Label: "Location", Type: panel.FieldText, Required: true},
 			{ID: "items", Label: "Items JSON", Type: panel.FieldJSON},
 		},
-		Metadata: screenMetadata(path, "menu"),
+		Metadata: cmsMetadata().Metadata(bff.ScreenContext{Path: path, Base: path, Record: "menu", Variant: bff.VariantSpecial}),
 	}
 }
 
 func (r *Registry) DashboardScreen() render.ScreenModel {
-	return render.ScreenModel{
-		ID:       "admin-dashboard",
-		Title:    "GoCMS Admin",
-		View:     render.ViewType("dashboard"),
-		Resource: "dashboard",
-		Metadata: map[string]string{
-			"admin_base": "/go-admin",
-			"api_base":   "/go-json",
-		},
-	}
+	return r.resolver.Dashboard("GoCMS Admin")
 }
 
 func RootDiscovery() codex.Discovery {
@@ -172,31 +131,13 @@ func Context(registry *Registry) *contractstest.Context {
 	return registry.Assembly.Context
 }
 
-func capabilityFor(resource panel.Resource[contracts.CapabilityID], operation panel.ResourceOperation) contracts.CapabilityID {
-	for _, capability := range resource.Capabilities {
-		if capability.Operation == operation {
-			return capability.Capability
-		}
-	}
-	return ""
-}
-
-func recordsByID(records []toolset.RecordTypeDefinition) map[toolset.RecordTypeID]toolset.RecordTypeDefinition {
-	result := map[toolset.RecordTypeID]toolset.RecordTypeDefinition{}
-	for _, record := range records {
-		result[record.ID] = record
-	}
-	return result
-}
-
-func screenMetadata(path string, record toolset.RecordTypeID) map[string]string {
-	return map[string]string{
-		"admin_base":  "/go-admin",
-		"api_base":    "/go-json",
-		"new_path":    strings.TrimRight(path, "/") + "/new",
-		"list_path":   path,
-		"list_api":    "/go-json/go/v2/" + collectionForRecord(record),
-		"form_action": "/go-json/go/v2/" + collectionForRecord(record),
+func cmsMetadata() bff.DefaultMetadata {
+	return bff.DefaultMetadata{
+		Bases:               bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
+		CollectionForRecord: collectionForRecord,
+		ResourceAPIPath: func(collection string) string {
+			return "/go-json/go/v2/" + collection
+		},
 	}
 }
 

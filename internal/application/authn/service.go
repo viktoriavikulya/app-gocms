@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	modulecaps "github.com/fastygo/app-gocms/pkg/module/capabilities"
 	"github.com/fastygo/platform/pkg/contracts"
 )
 
@@ -250,30 +250,30 @@ func (s Service) AuthenticateAppToken(_ context.Context, raw string) (Principal,
 func BuiltInRoles() map[string][]contracts.CapabilityID {
 	return map[string][]contracts.CapabilityID{
 		RoleAdmin: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentWrite,
-			modulecms.CapabilityContentPrivate,
-			modulecms.CapabilityMediaUpload,
-			modulecms.CapabilityMediaEdit,
-			modulecms.CapabilityTaxonomyManage,
-			modulecms.CapabilityTaxonomyAssign,
-			modulecms.CapabilityUsersManage,
-			modulecms.CapabilitySettingsManage,
+			modulecaps.AdminAccess,
+			modulecaps.ContentRead,
+			modulecaps.ContentWrite,
+			modulecaps.ContentPrivate,
+			modulecaps.MediaUpload,
+			modulecaps.MediaEdit,
+			modulecaps.TaxonomyManage,
+			modulecaps.TaxonomyAssign,
+			modulecaps.UsersManage,
+			modulecaps.SettingsManage,
 		},
 		RoleEditor: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentWrite,
-			modulecms.CapabilityContentPrivate,
-			modulecms.CapabilityMediaUpload,
-			modulecms.CapabilityMediaEdit,
-			modulecms.CapabilityTaxonomyAssign,
+			modulecaps.AdminAccess,
+			modulecaps.ContentRead,
+			modulecaps.ContentWrite,
+			modulecaps.ContentPrivate,
+			modulecaps.MediaUpload,
+			modulecaps.MediaEdit,
+			modulecaps.TaxonomyAssign,
 		},
 		RoleViewer: {
-			modulecms.CapabilityAdminAccess,
-			modulecms.CapabilityContentRead,
-			modulecms.CapabilityContentPrivate,
+			modulecaps.AdminAccess,
+			modulecaps.ContentRead,
+			modulecaps.ContentPrivate,
 		},
 	}
 }

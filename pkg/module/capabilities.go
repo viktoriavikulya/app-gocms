@@ -1,31 +1,23 @@
 package modulecms
 
-import "github.com/fastygo/platform/pkg/contracts"
+import (
+	modulecaps "github.com/fastygo/app-gocms/pkg/module/capabilities"
+	"github.com/fastygo/platform/pkg/contracts"
+)
 
 const (
-	CapabilityAdminAccess    contracts.CapabilityID = "admin.access"
-	CapabilityContentRead    contracts.CapabilityID = "content.read"
-	CapabilityContentWrite   contracts.CapabilityID = "content.write"
-	CapabilityContentPrivate contracts.CapabilityID = "content.read_private"
-	CapabilityMediaUpload    contracts.CapabilityID = "media.upload"
-	CapabilityMediaEdit      contracts.CapabilityID = "media.edit"
-	CapabilityTaxonomyManage contracts.CapabilityID = "taxonomies.manage"
-	CapabilityTaxonomyAssign contracts.CapabilityID = "taxonomies.assign"
-	CapabilityUsersManage    contracts.CapabilityID = "users.manage"
-	CapabilitySettingsManage contracts.CapabilityID = "settings.manage"
+	CapabilityAdminAccess    = modulecaps.AdminAccess
+	CapabilityContentRead    = modulecaps.ContentRead
+	CapabilityContentWrite   = modulecaps.ContentWrite
+	CapabilityContentPrivate = modulecaps.ContentPrivate
+	CapabilityMediaUpload    = modulecaps.MediaUpload
+	CapabilityMediaEdit      = modulecaps.MediaEdit
+	CapabilityTaxonomyManage = modulecaps.TaxonomyManage
+	CapabilityTaxonomyAssign = modulecaps.TaxonomyAssign
+	CapabilityUsersManage    = modulecaps.UsersManage
+	CapabilitySettingsManage = modulecaps.SettingsManage
 )
 
 func CapabilityDefinitions() []contracts.CapabilityDefinition {
-	return []contracts.CapabilityDefinition{
-		{ID: CapabilityAdminAccess, Label: "Access admin"},
-		{ID: CapabilityContentRead, Label: "Read content"},
-		{ID: CapabilityContentWrite, Label: "Write content"},
-		{ID: CapabilityContentPrivate, Label: "Read private content"},
-		{ID: CapabilityMediaUpload, Label: "Upload media"},
-		{ID: CapabilityMediaEdit, Label: "Edit media"},
-		{ID: CapabilityTaxonomyManage, Label: "Manage taxonomies"},
-		{ID: CapabilityTaxonomyAssign, Label: "Assign taxonomies"},
-		{ID: CapabilityUsersManage, Label: "Manage users"},
-		{ID: CapabilitySettingsManage, Label: "Manage settings"},
-	}
+	return modulecaps.Definitions()
 }

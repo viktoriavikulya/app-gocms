@@ -23,7 +23,12 @@ import (
 
 func TestCodexRouteSurfaces(t *testing.T) {
 	handler := testHandler(t)
-	for _, path := range []string{"/", "/go-login", "/go-json/", "/go-json/go/v2/"} {
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("ux-pilot default admin mode should not serve public home, got %d", response.Code)
+	}
+	for _, path := range []string{"/go-login", "/go-json/", "/go-json/go/v2/"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, testRequest(http.MethodGet, path))
 		if response.Code != http.StatusOK {
@@ -38,6 +43,16 @@ func TestCodexRouteSurfaces(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
+		}
+	}
+	posts := httptest.NewRecorder()
+	postsRequest := testRequest(http.MethodGet, "/go-admin/posts")
+	postsRequest.AddCookie(cookie)
+	handler.ServeHTTP(posts, postsRequest)
+	body := posts.Body.String()
+	for _, want := range []string{"Posts", "Schema-driven Platform preview", "<table"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("/go-admin/posts missing %q in pilot screen: %s", want, body)
 		}
 	}
 }
@@ -248,7 +263,7 @@ func TestLoginLockout(t *testing.T) {
 }
 
 func TestPublicSiteRendersThemeAndSlugs(t *testing.T) {
-	handler := testHandler(t)
+	handler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeFull})
 	for _, tc := range []struct {
 		path string
 		want []string
@@ -300,7 +315,7 @@ func TestFrameworkHealthEndpoints(t *testing.T) {
 }
 
 func TestGraphQLExtensionRouteAndVisibility(t *testing.T) {
-	handler := testHandler(t)
+	handler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeFull})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-graphql?query="+url.QueryEscape(`{posts{id slug title}}`)))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"posts"`) || !strings.Contains(response.Body.String(), "Hello world") {
@@ -316,7 +331,7 @@ func TestGraphQLExtensionRouteAndVisibility(t *testing.T) {
 }
 
 func TestOperationsHealthAuditAndSnapshot(t *testing.T) {
-	handler := testHandler(t)
+	handler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeFull})
 	admin := loginCookie(t, handler, "admin", "admin")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/ops/health"))
@@ -363,11 +378,11 @@ func TestOperationsHealthAuditAndSnapshot(t *testing.T) {
 }
 
 func TestRuntimeProfileModesGateSurfaces(t *testing.T) {
-	adminHandler := testHandlerOptions(t, gocmsapp.Options{RuntimeMode: gocmsapp.RuntimeModeAdmin})
+	adminHandler := testHandler(t)
 	response := httptest.NewRecorder()
 	adminHandler.ServeHTTP(response, testRequest(http.MethodGet, "/"))
 	if response.Code != http.StatusNotFound {
-		t.Fatalf("admin mode should disable public home, got %d", response.Code)
+		t.Fatalf("default ux-pilot admin mode should disable public home, got %d", response.Code)
 	}
 	response = httptest.NewRecorder()
 	adminHandler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/by-slug/hello-world"))

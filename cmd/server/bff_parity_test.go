@@ -67,6 +67,68 @@ func TestBFFProofScreensMatchGoldenFixtures(t *testing.T) {
 	}
 }
 
+func TestBFFErrorScreensReturnStructuredModels(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+
+	unauth := httptest.NewRecorder()
+	handler.ServeHTTP(unauth, testRequest(http.MethodGet, "/bff/screens/go-admin/posts"))
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", unauth.Code, unauth.Body.String())
+	}
+	var unauthScreen render.ScreenModel
+	if err := json.Unmarshal(unauth.Body.Bytes(), &unauthScreen); err != nil {
+		t.Fatalf("decode unauthorized screen: %v", err)
+	}
+	if unauthScreen.View != render.ViewError || unauthScreen.Error == nil || unauthScreen.Error.Code != render.ErrorCodeUnauthorized {
+		t.Fatalf("expected structured unauthorized screen: %#v", unauthScreen)
+	}
+
+	notFound := httptest.NewRecorder()
+	notFoundRequest := testRequest(http.MethodGet, "/bff/screens/go-admin/posts/missing-id/edit")
+	notFoundRequest.AddCookie(cookie)
+	handler.ServeHTTP(notFound, notFoundRequest)
+	if notFound.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", notFound.Code, notFound.Body.String())
+	}
+	var notFoundScreen render.ScreenModel
+	if err := json.Unmarshal(notFound.Body.Bytes(), &notFoundScreen); err != nil {
+		t.Fatalf("decode not-found screen: %v", err)
+	}
+	if notFoundScreen.View != render.ViewError || notFoundScreen.Error == nil || notFoundScreen.Error.Code != render.ErrorCodeNotFound {
+		t.Fatalf("expected structured not-found screen: %#v", notFoundScreen)
+	}
+}
+
+func TestBFFEmptyPostsTableMatchesGoldenFixture(t *testing.T) {
+	ctx := context.Background()
+	store, err := storagesqlite.Open("file:appcms-empty-bff?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Init(ctx); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	provider := storage.NewProvider(store)
+	registry, err := appschema.NewRegistryWithProvider(provider)
+	if err != nil {
+		t.Fatalf("build registry: %v", err)
+	}
+	authStore, err := appauthn.NewSeededMemoryStore()
+	if err != nil {
+		t.Fatalf("seed auth store: %v", err)
+	}
+	principal, ok := appauthn.NewService(authStore).Principal(contracts.PrincipalID("admin"))
+	if !ok {
+		t.Fatal("expected admin principal")
+	}
+	page, err := registry.Page(ctx, "/go-admin/posts", principal, nil)
+	if err != nil {
+		t.Fatalf("resolve page: %v", err)
+	}
+	bffparity.AssertScreenMatchesFixture(t, "appcms-posts-table-empty.json", page.Screen)
+}
+
 func testHydratedRegistry(t *testing.T) (*appschema.Registry, appauthn.Principal) {
 	t.Helper()
 	ctx := context.Background()

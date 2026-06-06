@@ -25,7 +25,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			ID:            "post.create",
 			Label:         "Create post",
 			Method:        "POST",
-			Path:          "/bff/actions/post.create",
+			Path:          bff.ActionPath("post.create"),
 			Scope:         bff.ActionScopeContentWrite,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
@@ -34,7 +34,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			ID:            "post.update",
 			Label:         "Update post",
 			Method:        "POST",
-			Path:          "/bff/actions/post.update",
+			Path:          bff.ActionPath("post.update"),
 			Scope:         bff.ActionScopeContentWrite,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
@@ -43,7 +43,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			ID:            "post.trash",
 			Label:         "Trash post",
 			Method:        "POST",
-			Path:          "/bff/actions/post.trash",
+			Path:          bff.ActionPath("post.trash"),
 			Scope:         bff.ActionScopeContentWrite,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
@@ -54,44 +54,6 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 	executors.RegisterHandler("post.update", postUpdateExecutor(provider))
 	executors.RegisterHandler("post.trash", postTrashExecutor(provider))
 	return executors
-}
-
-func (a authBoundary) handleBFFAction(executors *bff.ExecutorRegistry) http.HandlerFunc {
-	return a.requireBFFJSON(func(w http.ResponseWriter, r *http.Request) {
-		actionID := strings.TrimSpace(r.PathValue("actionId"))
-		principal, _ := a.principalFromRequest(r)
-		descriptor, ok := executors.Descriptors().Get(actionID)
-		if !ok {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "action not found"})
-			return
-		}
-		if descriptor.Capability != "" && !principal.Has(descriptor.Capability) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-			return
-		}
-		req, err := parseActionRequest(r)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
-			return
-		}
-		if descriptor.RequiresToken {
-			token := firstFormValue(req, "action_token")
-			if token == "" || !a.validActionToken(token, descriptor.Scope) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid action token"})
-				return
-			}
-		}
-		_, result, err := executors.Dispatch(r.Context(), actionID, req)
-		if err != nil {
-			if errors.Is(err, bff.ErrUnknownAction) {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": "action not found"})
-				return
-			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, bff.ActionStatus(result), result)
-	})
 }
 
 func parseActionRequest(r *http.Request) (bff.ActionRequest, error) {
@@ -117,6 +79,9 @@ func parseActionRequest(r *http.Request) (bff.ActionRequest, error) {
 
 func postCreateExecutor(provider storage.StoreProvider) bff.ActionHandler {
 	return func(ctx context.Context, _ bff.ActionDescriptor, req bff.ActionRequest) (bff.ActionResult, error) {
+		if issues := bff.RequiredFields(req, "id"); len(issues) > 0 {
+			return bff.ValidationFailure("", issues...), nil
+		}
 		entry, err := bindPostEntry(req)
 		if err != nil {
 			return bff.ValidationFailure(err.Error()), nil

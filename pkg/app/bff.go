@@ -26,15 +26,11 @@ func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.Handler
 		principal, _ := a.principalFromRequest(r)
 		page, err := registry.Page(r.Context(), path, principal, queryFromRequest(r))
 		if err != nil {
-			if appschema.ContentNotFound(err) {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": "screen not found"})
-				return
-			}
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "screen not found"})
+			writeJSON(w, http.StatusNotFound, bff.NotFoundScreen("The requested screen was not found."))
 			return
 		}
 		screen := page.Screen
-		if err := a.injectFormActionToken(&screen); err != nil {
+		if err := a.injectScreenActionToken(&screen); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -65,11 +61,11 @@ func (a authBoundary) requireBFFJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := a.principalFromRequest(r)
 		if !ok {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			writeJSON(w, http.StatusUnauthorized, bff.UnauthorizedScreen("Sign in to continue."))
 			return
 		}
 		if !principal.Has(modulecms.CapabilityAdminAccess) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			writeJSON(w, http.StatusForbidden, bff.ForbiddenScreen("You do not have permission to access this screen."))
 			return
 		}
 		runtime := contracts.RuntimeContext{ProfileID: "gocms-admin", WorkspaceID: "root", ModuleID: "cms", PrincipalID: principal.ID()}

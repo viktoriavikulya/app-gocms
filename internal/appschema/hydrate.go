@@ -70,6 +70,10 @@ func (h CMSHydrator) hydratePostTable(ctx context.Context, screen render.ScreenM
 		}
 		screen.Rows = append(screen.Rows, postRow(entry, req))
 	}
+	if len(entries) == 0 {
+		empty := render.TableEmptyState(screen)
+		screen.EmptyState = &empty
+	}
 	return screen, nil
 }
 

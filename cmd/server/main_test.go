@@ -22,6 +22,7 @@ import (
 	gocmsapp "github.com/fastygo/app-gocms/pkg/app"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/platform/pkg/bff"
+	"github.com/fastygo/platform/pkg/conformance/bffparity"
 	"github.com/fastygo/platform/pkg/contracts"
 	"github.com/fastygo/platform/pkg/render"
 )
@@ -413,8 +414,11 @@ func TestBFFScreenJSONMatchesInProcessModel(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode bff screen: %v", err)
 	}
-	if !reflect.DeepEqual(got, expected.Screen) {
+	if !reflect.DeepEqual(bffparity.NormalizeScreen(got), bffparity.NormalizeScreen(expected.Screen)) {
 		t.Fatalf("json screen mismatch:\n got: %#v\nwant: %#v", got, expected.Screen)
+	}
+	if got.Metadata["action_token"] == "" {
+		t.Fatal("expected volatile action_token on HTTP table screen")
 	}
 }
 

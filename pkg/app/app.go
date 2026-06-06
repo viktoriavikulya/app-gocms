@@ -202,7 +202,7 @@ func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.Handl
 			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
 			return
 		}
-		if err := a.injectFormActionToken(&page.Screen); err != nil {
+		if err := a.injectScreenActionToken(&page.Screen); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -336,15 +336,15 @@ func (a authBoundary) actionToken(action string, ttl time.Duration) (string, err
 	return frameworkauth.SignedEncode(actionToken{Action: action, Exp: time.Now().Add(ttl).Unix()}, a.secret)
 }
 
-func (a authBoundary) injectFormActionToken(screen *render.ScreenModel) error {
-	if string(screen.View) != "form" {
-		return nil
-	}
+func (a authBoundary) injectScreenActionToken(screen *render.ScreenModel) error {
 	if screen.Metadata == nil {
 		screen.Metadata = map[string]string{}
 	}
 	scope := screen.Metadata["action_scope"]
 	if scope == "" {
+		if string(screen.View) != string(render.ViewForm) {
+			return nil
+		}
 		scope = "admin-write"
 	}
 	token, err := a.actionToken(scope, 10*time.Minute)
@@ -353,6 +353,10 @@ func (a authBoundary) injectFormActionToken(screen *render.ScreenModel) error {
 	}
 	screen.Metadata["action_token"] = token
 	return nil
+}
+
+func (a authBoundary) ValidActionToken(raw, scope string) bool {
+	return a.validActionToken(raw, scope)
 }
 
 func (a authBoundary) validActionToken(raw string, action string) bool {

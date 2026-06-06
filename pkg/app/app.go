@@ -71,15 +71,15 @@ func Run() error {
 }
 
 func NewApp(options Options) (*frameworkapp.App, error) {
-	registry, err := registryFromOptions(options)
-	if err != nil {
-		return nil, err
-	}
 	cfg, err := frameworkConfig(options)
 	if err != nil {
 		return nil, err
 	}
 	provider, err := providerFromOptions(context.Background(), options)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := registryFromOptions(options, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -95,20 +95,20 @@ func NewApp(options Options) (*frameworkapp.App, error) {
 }
 
 func NewMux(options Options) *http.ServeMux {
-	registry, err := registryFromOptions(options)
+	cfg, err := frameworkConfig(options)
+	if err != nil {
+		panic(err)
+	}
+	provider, err := providerFromOptions(context.Background(), options)
+	if err != nil {
+		panic(err)
+	}
+	registry, err := registryFromOptions(options, provider)
 	if err != nil {
 		panic(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(options.StaticDir))))
-	provider, err := providerFromOptions(context.Background(), options)
-	if err != nil {
-		panic(err)
-	}
-	cfg, err := frameworkConfig(options)
-	if err != nil {
-		panic(err)
-	}
 	authBoundary, err := authFromOptions(options, cfg)
 	if err != nil {
 		panic(err)
@@ -195,7 +195,7 @@ func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.Handl
 	return a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimRight(r.URL.Path, "/")
 		principal, _ := a.principalFromRequest(r)
-		page, err := registry.Page(r.Context(), path, principal)
+		page, err := registry.Page(r.Context(), path, principal, queryFromRequest(r))
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
@@ -412,11 +412,11 @@ func providerFromOptions(ctx context.Context, options Options) (storage.StorePro
 	return storage.NewProvider(store), nil
 }
 
-func registryFromOptions(options Options) (*appschema.Registry, error) {
+func registryFromOptions(options Options, provider storage.StoreProvider) (*appschema.Registry, error) {
 	if options.Registry != nil {
 		return options.Registry, nil
 	}
-	return appschema.NewRegistry()
+	return appschema.NewRegistryWithProvider(provider)
 }
 
 func frameworkConfig(options Options) (frameworkapp.Config, error) {

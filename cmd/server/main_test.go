@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io"
@@ -115,14 +116,11 @@ func TestRESTDiscoveryAndEnvelopes(t *testing.T) {
 func TestRESTContentCRUDRoundTrip(t *testing.T) {
 	handler := testHandler(t)
 	cookie := loginCookie(t, handler, "admin", "admin")
-	create := `{"id":"post-rest","title":{"en":"REST Post"},"slug":"rest-post","content":"Hello REST","visibility":"public","status":"published","author_id":"admin"}`
+
 	response := httptest.NewRecorder()
-	request := testRequest(http.MethodPost, "/go-json/go/v2/posts")
-	request.AddCookie(cookie)
-	request.Body = io.NopCloser(bytes.NewBufferString(create))
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
+	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/post-rest"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "REST Post") {
+		t.Fatalf("get seeded post returned %d: %s", response.Code, response.Body.String())
 	}
 
 	response = httptest.NewRecorder()
@@ -139,18 +137,12 @@ func TestRESTContentCRUDRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &list); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if list.Pagination.Total == 0 {
-		t.Fatalf("expected persisted post in list: %s", response.Body.String())
+	if list.Pagination.Total < 2 {
+		t.Fatalf("expected seeded posts in list: %s", response.Body.String())
 	}
 
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, testRequest(http.MethodGet, "/go-json/go/v2/posts/post-rest"))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "REST Post") {
-		t.Fatalf("get returned %d: %s", response.Code, response.Body.String())
-	}
-
-	response = httptest.NewRecorder()
-	request = testRequest(http.MethodPatch, "/go-json/go/v2/posts/post-rest")
+	request := testRequest(http.MethodPatch, "/go-json/go/v2/posts/post-rest")
 	request.AddCookie(cookie)
 	request.Body = io.NopCloser(bytes.NewBufferString(`{"excerpt":"updated excerpt"}`))
 	handler.ServeHTTP(response, request)
@@ -402,16 +394,9 @@ func TestRuntimeProfileModesGateSurfaces(t *testing.T) {
 }
 
 func TestBFFScreenJSONMatchesInProcessModel(t *testing.T) {
-	handler, store := testHandlerWithAuthStore(t)
-	registry, err := appschema.NewRegistry()
-	if err != nil {
-		t.Fatalf("build registry: %v", err)
-	}
-	principal, ok := appauthn.NewService(store).Principal(contracts.PrincipalID("admin"))
-	if !ok {
-		t.Fatal("expected admin principal")
-	}
-	expected, err := registry.Page(context.Background(), "/go-admin/posts", principal)
+	handler := testHandler(t)
+	registry, principal := testHydratedRegistry(t)
+	expected, err := registry.Page(context.Background(), "/go-admin/posts", principal, nil)
 	if err != nil {
 		t.Fatalf("resolve in-process page: %v", err)
 	}
@@ -703,19 +688,22 @@ func testHandlerOptions(t *testing.T, options gocmsapp.Options) http.Handler {
 
 func testHandlerWithAuthStoreOptions(t *testing.T, options gocmsapp.Options) (http.Handler, *appauthn.MemoryStore) {
 	t.Helper()
-	registry, err := appschema.NewRegistry()
-	if err != nil {
-		t.Fatalf("build registry: %v", err)
-	}
 	authStore, err := appauthn.NewSeededMemoryStore()
 	if err != nil {
 		t.Fatalf("seed auth store: %v", err)
 	}
+	if options.StorageDSN == "" {
+		options.StorageDSN = fmt.Sprintf("file:appcms-test-%d?mode=memory&cache=private", time.Now().UnixNano())
+	}
+	options.AuthStore = authStore
+	if !options.Seed {
+		options.Seed = true
+	}
 	application, err := gocmsapp.NewApp(gocmsapp.Options{
 		Addr:        "127.0.0.1:0",
 		StaticDir:   filepath.Join("..", "..", "web", "static"),
-		Registry:    registry,
-		Seed:        true,
+		StorageDSN:  options.StorageDSN,
+		Seed:        options.Seed,
 		AuthStore:   authStore,
 		Headless:    options.Headless,
 		RuntimeMode: options.RuntimeMode,

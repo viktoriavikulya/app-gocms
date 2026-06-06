@@ -24,8 +24,12 @@ func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.Handler
 	return a.requireBFFJSON(func(w http.ResponseWriter, r *http.Request) {
 		path := bffScreenPath(r.PathValue("path"))
 		principal, _ := a.principalFromRequest(r)
-		page, err := registry.Page(r.Context(), path, principal)
+		page, err := registry.Page(r.Context(), path, principal, queryFromRequest(r))
 		if err != nil {
+			if appschema.ContentNotFound(err) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "screen not found"})
+				return
+			}
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "screen not found"})
 			return
 		}
@@ -87,4 +91,8 @@ func bffScreenPath(raw string) string {
 		return "/go-admin"
 	}
 	return "/" + raw
+}
+
+func queryFromRequest(r *http.Request) map[string]string {
+	return appschema.QueryFromValues(r.URL.Query())
 }

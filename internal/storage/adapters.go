@@ -60,9 +60,17 @@ func (a ApplicationRepositories) Save(ctx context.Context, entry domaincontent.E
 }
 
 func (a ApplicationRepositories) Get(ctx context.Context, id domaincontent.ID) (domaincontent.Entry, bool, error) {
-	for _, repo := range []RecordRepository{a.repos.Posts, a.repos.Pages} {
-		entry, ok, err := get[domaincontent.Entry](ctx, repo, contracts.RecordID(id))
+	repoKinds := []struct {
+		repo RecordRepository
+		kind domaincontent.Kind
+	}{
+		{a.repos.Posts, domaincontent.KindPost},
+		{a.repos.Pages, domaincontent.KindPage},
+	}
+	for _, item := range repoKinds {
+		entry, ok, err := get[domaincontent.Entry](ctx, item.repo, contracts.RecordID(id))
 		if err == nil && ok {
+			entry = withContentKind(entry, item.kind)
 			return entry, true, nil
 		}
 	}
@@ -83,13 +91,28 @@ func (a ApplicationRepositories) List(ctx context.Context, query domaincontent.Q
 		if err != nil {
 			return nil, err
 		}
+		defaultKind := domaincontent.Kind("")
+		switch repo {
+		case a.repos.Posts:
+			defaultKind = domaincontent.KindPost
+		case a.repos.Pages:
+			defaultKind = domaincontent.KindPage
+		}
 		for _, entry := range items {
+			entry = withContentKind(entry, defaultKind)
 			if query.Status == "" || entry.Status == query.Status {
 				entries = append(entries, entry)
 			}
 		}
 	}
 	return entries, nil
+}
+
+func withContentKind(entry domaincontent.Entry, kind domaincontent.Kind) domaincontent.Entry {
+	if entry.Kind == "" {
+		entry.Kind = kind
+	}
+	return entry
 }
 
 func (a ApplicationRepositories) SaveContentType(ctx context.Context, item contenttype.Type) error {

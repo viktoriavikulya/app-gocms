@@ -1,23 +1,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/storage"
+	storagesqlite "github.com/fastygo/app-gocms/internal/storage/sqlite"
 	"github.com/fastygo/platform/pkg/conformance/bffparity"
+	"github.com/fastygo/platform/pkg/contracts"
 	"github.com/fastygo/platform/pkg/render"
 )
 
 func TestBFFProofScreensMatchGoldenFixtures(t *testing.T) {
 	handler := testHandler(t)
-	registry, err := appschema.NewRegistry()
-	if err != nil {
-		t.Fatalf("build registry: %v", err)
-	}
+	registry, principal := testHydratedRegistry(t)
 	cookie := loginCookie(t, handler, "admin", "admin")
 	cases := []struct {
 		path    string
@@ -37,11 +39,11 @@ func TestBFFProofScreensMatchGoldenFixtures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.fixture, func(t *testing.T) {
-			inProcess, err := registry.Screen(tc.path)
+			page, err := registry.Page(context.Background(), tc.path, principal, nil)
 			if err != nil {
-				t.Fatalf("resolve screen: %v", err)
+				t.Fatalf("resolve page: %v", err)
 			}
-			bffparity.AssertScreenMatchesFixture(t, tc.fixture, inProcess)
+			bffparity.AssertScreenMatchesFixture(t, tc.fixture, page.Screen)
 
 			response := httptest.NewRecorder()
 			request := testRequest(http.MethodGet, tc.bffPath)
@@ -55,12 +57,41 @@ func TestBFFProofScreensMatchGoldenFixtures(t *testing.T) {
 				t.Fatalf("decode bff screen: %v", err)
 			}
 			bffparity.AssertScreenMatchesFixture(t, tc.fixture, httpScreen)
-			if !reflect.DeepEqual(bffparity.NormalizeScreen(inProcess), bffparity.NormalizeScreen(httpScreen)) {
-				t.Fatalf("in-process and HTTP screens differ after normalization:\n in-process: %#v\n http: %#v", inProcess, httpScreen)
+			if !reflect.DeepEqual(bffparity.NormalizeScreen(page.Screen), bffparity.NormalizeScreen(httpScreen)) {
+				t.Fatalf("in-process and HTTP screens differ after normalization:\n in-process: %#v\n http: %#v", page.Screen, httpScreen)
 			}
 			if tc.fixture == "appcms-post-edit-form.json" && httpScreen.Metadata["action_token"] == "" {
 				t.Fatal("expected volatile action_token on HTTP form screen")
 			}
 		})
 	}
+}
+
+func testHydratedRegistry(t *testing.T) (*appschema.Registry, appauthn.Principal) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := storagesqlite.Open("file:appcms-bff-parity?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Init(ctx); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	if err := storagesqlite.SeedMinimalSite(ctx, store, "root"); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+	provider := storage.NewProvider(store)
+	registry, err := appschema.NewRegistryWithProvider(provider)
+	if err != nil {
+		t.Fatalf("build registry: %v", err)
+	}
+	authStore, err := appauthn.NewSeededMemoryStore()
+	if err != nil {
+		t.Fatalf("seed auth store: %v", err)
+	}
+	principal, ok := appauthn.NewService(authStore).Principal(contracts.PrincipalID("admin"))
+	if !ok {
+		t.Fatal("expected admin principal")
+	}
+	return registry, principal
 }

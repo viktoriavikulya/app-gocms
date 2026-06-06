@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fastygo/app-gocms/internal/storage"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
 	"github.com/fastygo/platform/pkg/bff"
@@ -25,6 +26,10 @@ type Registry struct {
 }
 
 func NewRegistry() (*Registry, error) {
+	return NewRegistryWithProvider(nil)
+}
+
+func NewRegistryWithProvider(provider storage.StoreProvider) (*Registry, error) {
 	host, err := modulehost.New(modulecms.Module{})
 	if err != nil {
 		return nil, err
@@ -57,11 +62,15 @@ func NewRegistry() (*Registry, error) {
 		Special:  special,
 		Metadata: cmsMetadata(),
 	})
+	var hydrator bff.ScreenHydrator = bff.NoopHydrator{}
+	if provider != nil {
+		hydrator = CMSHydrator{Provider: provider}
+	}
 	registry := &Registry{
 		Assembly: assemblies[0],
 		Special:  special,
 		resolver: resolver,
-		page: bff.NewPageRuntime(
+		page: bff.NewPageRuntimeWithHydrator(
 			resolver,
 			bff.NewNavigator(assemblies[0].Context.Resources),
 			bff.ShellModel{
@@ -72,6 +81,7 @@ func NewRegistry() (*Registry, error) {
 				APIBase:     "/go-json",
 				Description: "Schema-driven Platform preview",
 			},
+			hydrator,
 		),
 	}
 	return registry, nil
@@ -89,8 +99,8 @@ func (r *Registry) Screen(path string) (render.ScreenModel, error) {
 	return r.resolver.Screen(path)
 }
 
-func (r *Registry) Page(ctx context.Context, path string, principal bff.Principal) (bff.PageModel, error) {
-	return r.page.Page(ctx, bff.PageRequest{Path: path, Principal: principal})
+func (r *Registry) Page(ctx context.Context, path string, principal bff.Principal, query map[string]string) (bff.PageModel, error) {
+	return r.page.Page(ctx, pageRequest(path, principal, query))
 }
 
 func (r *Registry) DashboardPage(ctx context.Context, principal bff.Principal) (bff.PageModel, error) {
@@ -186,7 +196,11 @@ func cmsMetadata() bff.MetadataFunc {
 }
 
 func recordIDFromEditPath(path string) string {
-	trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/edit")
+	trimmed := strings.TrimRight(path, "/")
+	if strings.HasSuffix(trimmed, "/new") {
+		return ""
+	}
+	trimmed = strings.TrimSuffix(trimmed, "/edit")
 	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 {
 		return trimmed[idx+1:]
 	}

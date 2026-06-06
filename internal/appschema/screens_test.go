@@ -53,7 +53,7 @@ func TestPageUsesPlatformBFFRuntime(t *testing.T) {
 	if !ok {
 		t.Fatal("expected admin principal")
 	}
-	page, err := registry.Page(context.Background(), "/go-admin/posts", principal)
+	page, err := registry.Page(context.Background(), "/go-admin/posts", principal, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

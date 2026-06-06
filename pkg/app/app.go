@@ -150,7 +150,7 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
 	if mode != RuntimeModeHeadless {
-		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(renderAdminDashboard(registry)))
+		mux.HandleFunc("GET /go-admin/{$}", authBoundary.renderAdminDashboard(registry))
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
 	}
 	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
@@ -174,56 +174,45 @@ func renderHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func renderAdminDashboard(registry *appschema.Registry) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		screen := registry.DashboardScreen()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page("GoCMS Admin", screen).Render(r.Context(), w); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	}
-}
-
-func renderAdminScreen(registry *appschema.Registry) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimRight(r.URL.Path, "/")
-		screen, err := registry.Screen(path)
+func (a authBoundary) renderAdminDashboard(registry *appschema.Registry) http.HandlerFunc {
+	return a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.DashboardPage(r.Context(), principal)
 		if err != nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page(screen.Title, screen).Render(r.Context(), w); err != nil {
+		if err := views.Page(page).Render(r.Context(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-	}
+	})
 }
 
 func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.HandlerFunc {
 	return a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimRight(r.URL.Path, "/")
-		screen, err := registry.Screen(path)
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.Page(r.Context(), path, principal)
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
 			return
 		}
-		if string(screen.View) == "form" {
-			if screen.Metadata == nil {
-				screen.Metadata = map[string]string{}
+		if string(page.Screen.View) == "form" {
+			if page.Screen.Metadata == nil {
+				page.Screen.Metadata = map[string]string{}
 			}
 			token, err := a.actionToken("admin-write", 10*time.Minute)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			screen.Metadata["action_token"] = token
+			page.Screen.Metadata["action_token"] = token
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.Page(screen.Title, screen).Render(r.Context(), w); err != nil {
+		if err := views.Page(page).Render(r.Context(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})

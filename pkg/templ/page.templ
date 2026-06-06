@@ -1,19 +1,19 @@
 package views
 
 import (
-	"github.com/fastygo/platform/pkg/render"
+	"github.com/fastygo/platform/pkg/bff"
 	platformtempl "github.com/fastygo/platform/pkg/renderers/templ"
 	"github.com/fastygo/templ/components/card"
 	"github.com/fastygo/templ/ui/button"
 )
 
-templ Page(title string, screen render.ScreenModel) {
+templ Page(page bff.PageModel) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title }</title>
+			<title>{ page.Title }</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 		</head>
 		<body class="min-h-screen bg-background text-foreground antialiased">
@@ -21,35 +21,30 @@ templ Page(title string, screen render.ScreenModel) {
 				<aside class="w-64 border-r border-border bg-muted/20 p-4" aria-label="Product navigation">
 					@card.Card(card.CardProps{Variant: "muted", Class: "mb-4"}) {
 						@card.CardHeader(card.CardHeaderProps{Class: "space-y-1"}) {
-							@card.CardTitle(card.CardTitleProps{Order: 2}, "GoCMS Admin")
-							@card.CardDescription(card.CardDescriptionProps{}, "Content workspace")
+							@card.CardTitle(card.CardTitleProps{Order: 2}, page.Shell.Product)
+							@card.CardDescription(card.CardDescriptionProps{}, page.Shell.Workspace)
 						}
 					}
 					<nav class="space-y-1 text-sm" aria-label="CMS resources">
-						@NavLink("/go-admin/posts", "Posts")
-						@NavLink("/go-admin/pages", "Pages")
-						@NavLink("/go-admin/content-types", "Content Types")
-						@NavLink("/go-admin/taxonomies", "Taxonomies")
-						@NavLink("/go-admin/terms", "Terms")
-						@NavLink("/go-admin/meta", "Metadata")
-						@NavLink("/go-admin/media", "Media")
-						@NavLink("/go-admin/authors", "Authors")
-						@NavLink("/go-admin/menus", "Menus")
-						@NavLink("/go-admin/settings", "Settings")
+						for _, item := range page.Navigation.Items {
+							@NavLink(item.Href, item.Label)
+						}
 					</nav>
 				</aside>
 				<main class="flex-1 p-6">
 					<div class="mx-auto max-w-6xl space-y-6">
 						<header class="space-y-1">
-							<p class="text-sm text-muted-foreground">Schema-driven Platform preview</p>
-							<h1 class="text-2xl font-semibold tracking-tight">{ screen.Title }</h1>
+							if page.Shell.Description != "" {
+								<p class="text-sm text-muted-foreground">{ page.Shell.Description }</p>
+							}
+							<h1 class="text-2xl font-semibold tracking-tight">{ page.Screen.Title }</h1>
 							<nav class="text-sm text-muted-foreground" aria-label="Breadcrumb">
-								<a class="hover:text-foreground" href="/go-admin/">Admin</a>
+								<a class="hover:text-foreground" href={ templ.SafeURL(page.Shell.AdminBase + "/") }>Admin</a>
 								<span aria-hidden="true"> / </span>
-								<span>{ screen.Title }</span>
+								<span>{ page.Screen.Title }</span>
 							</nav>
 						</header>
-						@platformtempl.Screen(screen)
+						@platformtempl.Screen(page.Screen)
 					</div>
 				</main>
 			</div>

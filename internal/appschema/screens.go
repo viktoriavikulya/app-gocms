@@ -1,6 +1,7 @@
 package appschema
 
 import (
+	"context"
 	"fmt"
 
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
@@ -18,6 +19,7 @@ import (
 type Registry struct {
 	Assembly modulehost.WorkspaceAssembly
 	resolver bff.Resolver
+	page     bff.PageRuntime
 	Special  map[string]render.ScreenModel
 }
 
@@ -48,15 +50,28 @@ func NewRegistry() (*Registry, error) {
 		"/go-admin/menus":        menusScreen("/go-admin/menus"),
 		"/go-admin/menus/new":    menusScreen("/go-admin/menus"),
 	}
+	resolver := bff.NewResolver(bff.Options{
+		Bases:    bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
+		Bindings: bff.BindingsFromAssembly(assemblies[0]),
+		Special:  special,
+		Metadata: cmsMetadata().Metadata,
+	})
 	registry := &Registry{
 		Assembly: assemblies[0],
 		Special:  special,
-		resolver: bff.NewResolver(bff.Options{
-			Bases:    bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
-			Bindings: bff.BindingsFromAssembly(assemblies[0]),
-			Special:  special,
-			Metadata: cmsMetadata().Metadata,
-		}),
+		resolver: resolver,
+		page: bff.NewPageRuntime(
+			resolver,
+			bff.NewNavigator(assemblies[0].Context.Resources),
+			bff.ShellModel{
+				Title:       "GoCMS Admin",
+				Product:     "GoCMS Admin",
+				Workspace:   "Content workspace",
+				AdminBase:   "/go-admin",
+				APIBase:     "/go-json",
+				Description: "Schema-driven Platform preview",
+			},
+		),
 	}
 	return registry, nil
 }
@@ -71,6 +86,14 @@ func MustRegistry() *Registry {
 
 func (r *Registry) Screen(path string) (render.ScreenModel, error) {
 	return r.resolver.Screen(path)
+}
+
+func (r *Registry) Page(ctx context.Context, path string, principal bff.Principal) (bff.PageModel, error) {
+	return r.page.Page(ctx, bff.PageRequest{Path: path, Principal: principal})
+}
+
+func (r *Registry) DashboardPage(ctx context.Context, principal bff.Principal) (bff.PageModel, error) {
+	return r.page.Dashboard(ctx, "GoCMS Admin", principal)
 }
 
 func settingsScreen(path string) render.ScreenModel {

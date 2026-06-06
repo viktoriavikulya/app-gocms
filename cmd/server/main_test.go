@@ -489,6 +489,31 @@ func TestBFFNavAndSessionJSON(t *testing.T) {
 	}
 }
 
+func TestBFFFormScreenIncludesActionToken(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodGet, "/bff/screens/go-admin/posts/post-rest/edit")
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("form bff returned %d: %s", response.Code, response.Body.String())
+	}
+	var screen render.ScreenModel
+	if err := json.Unmarshal(response.Body.Bytes(), &screen); err != nil {
+		t.Fatalf("decode form screen: %v", err)
+	}
+	if screen.View != render.ViewForm {
+		t.Fatalf("expected form view, got %q", screen.View)
+	}
+	if screen.Metadata["action_token"] == "" {
+		t.Fatalf("expected action_token in BFF form metadata for React/Templ parity: %#v", screen.Metadata)
+	}
+	if screen.Metadata["form_action"] == "" {
+		t.Fatal("expected form_action metadata")
+	}
+}
+
 func TestAppCMSUsesModuleCMSDescriptors(t *testing.T) {
 	registry, err := appschema.NewRegistry()
 	if err != nil {

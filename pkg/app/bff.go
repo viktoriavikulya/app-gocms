@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
@@ -26,7 +27,19 @@ func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.Handler
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "screen not found"})
 			return
 		}
-		writeJSON(w, http.StatusOK, page.Screen)
+		screen := page.Screen
+		if string(screen.View) == "form" {
+			if screen.Metadata == nil {
+				screen.Metadata = map[string]string{}
+			}
+			token, err := a.actionToken("admin-write", 10*time.Minute)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			screen.Metadata["action_token"] = token
+		}
+		writeJSON(w, http.StatusOK, screen)
 	})
 }
 

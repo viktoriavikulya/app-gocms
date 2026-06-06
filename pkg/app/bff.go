@@ -3,19 +3,21 @@ package app
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/storage"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/platform/pkg/bff"
 	"github.com/fastygo/platform/pkg/contracts"
 )
 
-func registerBFFRoutes(mux *http.ServeMux, registry *appschema.Registry, authBoundary authBoundary) {
+func registerBFFRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary) {
+	executors := newCMSActionExecutors(provider)
 	mux.HandleFunc("GET /bff/screens/{path...}", authBoundary.renderBFFScreen(registry))
 	mux.HandleFunc("GET /bff/nav", authBoundary.renderBFFNav(registry))
 	mux.HandleFunc("GET /bff/session", authBoundary.renderBFFSession())
+	mux.HandleFunc("POST /bff/actions/{actionId}", authBoundary.handleBFFAction(executors))
 }
 
 func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.HandlerFunc {
@@ -28,16 +30,9 @@ func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.Handler
 			return
 		}
 		screen := page.Screen
-		if string(screen.View) == "form" {
-			if screen.Metadata == nil {
-				screen.Metadata = map[string]string{}
-			}
-			token, err := a.actionToken("admin-write", 10*time.Minute)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			screen.Metadata["action_token"] = token
+		if err := a.injectFormActionToken(&screen); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		writeJSON(w, http.StatusOK, screen)
 	})

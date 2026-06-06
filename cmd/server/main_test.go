@@ -512,6 +512,142 @@ func TestBFFFormScreenIncludesActionToken(t *testing.T) {
 	if screen.Metadata["form_action"] == "" {
 		t.Fatal("expected form_action metadata")
 	}
+	if !strings.HasPrefix(screen.Metadata["form_action"], "/bff/actions/") {
+		t.Fatalf("expected BFF form action, got %q", screen.Metadata["form_action"])
+	}
+}
+
+func TestBFFPostActionsCreateUpdateTrash(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	token := bffFormActionToken(t, handler, cookie, "/bff/screens/go-admin/posts/new")
+
+	create := url.Values{}
+	create.Set("action_token", token)
+	create.Set("id", "post-bff")
+	create.Set("title", "BFF Post")
+	create.Set("slug", "bff-post")
+	create.Set("content", "Hello BFF")
+	create.Set("status", "draft")
+	create.Set("visibility", "public")
+	create.Set("author_id", "admin")
+	createResponse := httptest.NewRecorder()
+	createRequest := testRequest(http.MethodPost, "/bff/actions/post.create")
+	createRequest.AddCookie(cookie)
+	createRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	createRequest.Body = io.NopCloser(strings.NewReader(create.Encode()))
+	handler.ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("create action returned %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var createResult bff.ActionResult
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &createResult); err != nil || !createResult.OK {
+		t.Fatalf("create action result: %#v err=%v body=%s", createResult, err, createResponse.Body.String())
+	}
+
+	updateToken := bffFormActionToken(t, handler, cookie, "/bff/screens/go-admin/posts/post-bff/edit")
+	update := url.Values{}
+	update.Set("action_token", updateToken)
+	update.Set("excerpt", "updated via BFF")
+	updateResponse := httptest.NewRecorder()
+	updateRequest := testRequest(http.MethodPost, "/bff/actions/post.update?id=post-bff")
+	updateRequest.AddCookie(cookie)
+	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	updateRequest.Body = io.NopCloser(strings.NewReader(update.Encode()))
+	handler.ServeHTTP(updateResponse, updateRequest)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("update action returned %d: %s", updateResponse.Code, updateResponse.Body.String())
+	}
+
+	trashToken := updateToken
+	trash := url.Values{}
+	trash.Set("action_token", trashToken)
+	trashResponse := httptest.NewRecorder()
+	trashRequest := testRequest(http.MethodPost, "/bff/actions/post.trash?id=post-bff")
+	trashRequest.AddCookie(cookie)
+	trashRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	trashRequest.Body = io.NopCloser(strings.NewReader(trash.Encode()))
+	handler.ServeHTTP(trashResponse, trashRequest)
+	if trashResponse.Code != http.StatusOK {
+		t.Fatalf("trash action returned %d: %s", trashResponse.Code, trashResponse.Body.String())
+	}
+}
+
+func TestBFFPostActionsEnforceAuthCapabilityAndToken(t *testing.T) {
+	handler := testHandler(t)
+	cookie := loginCookie(t, handler, "admin", "admin")
+	token := bffFormActionToken(t, handler, cookie, "/bff/screens/go-admin/posts/new")
+
+	unauth := httptest.NewRecorder()
+	handler.ServeHTTP(unauth, testRequest(http.MethodPost, "/bff/actions/post.create"))
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", unauth.Code)
+	}
+
+	viewerCookie := loginCookie(t, handler, "viewer", "viewer")
+	viewerBody := url.Values{}
+	viewerBody.Set("action_token", token)
+	viewerBody.Set("id", "post-viewer")
+	viewerBody.Set("status", "draft")
+	viewerBody.Set("visibility", "public")
+	viewerRequest := testRequest(http.MethodPost, "/bff/actions/post.create")
+	viewerRequest.AddCookie(viewerCookie)
+	viewerRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	viewerRequest.Body = io.NopCloser(strings.NewReader(viewerBody.Encode()))
+	viewerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(viewerResponse, viewerRequest)
+	if viewerResponse.Code != http.StatusForbidden {
+		t.Fatalf("expected viewer forbidden 403, got %d: %s", viewerResponse.Code, viewerResponse.Body.String())
+	}
+
+	badToken := url.Values{}
+	badToken.Set("action_token", "invalid")
+	badToken.Set("id", "post-bad")
+	badToken.Set("status", "draft")
+	badToken.Set("visibility", "public")
+	badRequest := testRequest(http.MethodPost, "/bff/actions/post.create")
+	badRequest.AddCookie(cookie)
+	badRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badRequest.Body = io.NopCloser(strings.NewReader(badToken.Encode()))
+	badResponse := httptest.NewRecorder()
+	handler.ServeHTTP(badResponse, badRequest)
+	if badResponse.Code != http.StatusForbidden {
+		t.Fatalf("expected invalid token 403, got %d", badResponse.Code)
+	}
+
+	invalid := url.Values{}
+	invalid.Set("action_token", token)
+	invalidRequest := testRequest(http.MethodPost, "/bff/actions/post.create")
+	invalidRequest.AddCookie(cookie)
+	invalidRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	invalidRequest.Body = io.NopCloser(strings.NewReader(invalid.Encode()))
+	invalidResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidResponse, invalidRequest)
+	if invalidResponse.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected validation 422, got %d: %s", invalidResponse.Code, invalidResponse.Body.String())
+	}
+	if !strings.Contains(invalidResponse.Body.String(), "validation") {
+		t.Fatalf("expected validation model: %s", invalidResponse.Body.String())
+	}
+}
+
+func bffFormActionToken(t *testing.T, handler http.Handler, cookie *http.Cookie, screenPath string) string {
+	t.Helper()
+	response := httptest.NewRecorder()
+	request := testRequest(http.MethodGet, screenPath)
+	request.AddCookie(cookie)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("%s returned %d: %s", screenPath, response.Code, response.Body.String())
+	}
+	var screen render.ScreenModel
+	if err := json.Unmarshal(response.Body.Bytes(), &screen); err != nil {
+		t.Fatalf("decode screen: %v", err)
+	}
+	if screen.Metadata["action_token"] == "" {
+		t.Fatalf("missing action token: %#v", screen.Metadata)
+	}
+	return screen.Metadata["action_token"]
 }
 
 func TestAppCMSUsesModuleCMSDescriptors(t *testing.T) {

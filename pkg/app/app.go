@@ -28,6 +28,7 @@ import (
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	views "github.com/fastygo/app-gocms/pkg/templ"
 	frameworkapp "github.com/fastygo/framework/pkg/app"
+	"github.com/fastygo/platform/pkg/render"
 	frameworkauth "github.com/fastygo/framework/pkg/auth"
 	"github.com/fastygo/framework/pkg/web/security"
 	"github.com/fastygo/platform/pkg/contracts"
@@ -149,7 +150,7 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 	mux.HandleFunc("POST /go-login", authBoundary.completeLogin)
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
-	registerBFFRoutes(mux, registry, authBoundary)
+	registerBFFRoutes(mux, registry, provider, authBoundary)
 	if mode != RuntimeModeHeadless {
 		mux.HandleFunc("GET /go-admin/{$}", authBoundary.renderAdminDashboard(registry))
 		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
@@ -201,16 +202,9 @@ func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.Handl
 			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
 			return
 		}
-		if string(page.Screen.View) == "form" {
-			if page.Screen.Metadata == nil {
-				page.Screen.Metadata = map[string]string{}
-			}
-			token, err := a.actionToken("admin-write", 10*time.Minute)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			page.Screen.Metadata["action_token"] = token
+		if err := a.injectFormActionToken(&page.Screen); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := views.Page(page).Render(r.Context(), w); err != nil {
@@ -340,6 +334,25 @@ func (a authBoundary) principalFromRequest(r *http.Request) (appauthn.Principal,
 
 func (a authBoundary) actionToken(action string, ttl time.Duration) (string, error) {
 	return frameworkauth.SignedEncode(actionToken{Action: action, Exp: time.Now().Add(ttl).Unix()}, a.secret)
+}
+
+func (a authBoundary) injectFormActionToken(screen *render.ScreenModel) error {
+	if string(screen.View) != "form" {
+		return nil
+	}
+	if screen.Metadata == nil {
+		screen.Metadata = map[string]string{}
+	}
+	scope := screen.Metadata["action_scope"]
+	if scope == "" {
+		scope = "admin-write"
+	}
+	token, err := a.actionToken(scope, 10*time.Minute)
+	if err != nil {
+		return err
+	}
+	screen.Metadata["action_token"] = token
+	return nil
 }
 
 func (a authBoundary) validActionToken(raw string, action string) bool {

@@ -25,8 +25,18 @@ func TestScreensUsePlatformRendererModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if form.View != render.ViewForm || form.Metadata["form_action"] != "/go-json/go/v2/posts" || len(form.Fields) == 0 {
+	if form.View != render.ViewForm || form.Metadata["form_action"] != "/bff/actions/post.create" || len(form.Fields) == 0 {
 		t.Fatalf("unexpected form screen: %#v", form)
+	}
+	if form.Metadata["action_scope"] != "admin.content.write" {
+		t.Fatalf("expected scoped action token metadata: %#v", form.Metadata)
+	}
+	edit, err := registry.Screen("/go-admin/posts/post-1/edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edit.Metadata["form_action"] != "/bff/actions/post.update?id=post-1" {
+		t.Fatalf("unexpected edit form action: %#v", edit.Metadata)
 	}
 }
 

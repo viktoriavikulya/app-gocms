@@ -3,6 +3,7 @@ package appschema
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
@@ -54,7 +55,7 @@ func NewRegistry() (*Registry, error) {
 		Bases:    bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
 		Bindings: bff.BindingsFromAssembly(assemblies[0]),
 		Special:  special,
-		Metadata: cmsMetadata().Metadata,
+		Metadata: cmsMetadata(),
 	})
 	registry := &Registry{
 		Assembly: assemblies[0],
@@ -107,7 +108,7 @@ func settingsScreen(path string) render.ScreenModel {
 			{ID: "site.title", Label: "Site title", Type: panel.FieldText, Required: true},
 			{ID: "site.description", Label: "Site description", Type: panel.FieldTextarea},
 		},
-		Metadata: cmsMetadata().Metadata(bff.ScreenContext{Path: path, Base: path, Record: "setting", Variant: bff.VariantSpecial}),
+		Metadata: cmsMetadata()(bff.ScreenContext{Path: path, Base: path, Record: "setting", Variant: bff.VariantSpecial}),
 	}
 }
 
@@ -123,7 +124,7 @@ func menusScreen(path string) render.ScreenModel {
 			{ID: "location", Label: "Location", Type: panel.FieldText, Required: true},
 			{ID: "items", Label: "Items JSON", Type: panel.FieldJSON},
 		},
-		Metadata: cmsMetadata().Metadata(bff.ScreenContext{Path: path, Base: path, Record: "menu", Variant: bff.VariantSpecial}),
+		Metadata: cmsMetadata()(bff.ScreenContext{Path: path, Base: path, Record: "menu", Variant: bff.VariantSpecial}),
 	}
 }
 
@@ -154,14 +155,42 @@ func Context(registry *Registry) *contractstest.Context {
 	return registry.Assembly.Context
 }
 
-func cmsMetadata() bff.DefaultMetadata {
-	return bff.DefaultMetadata{
+func cmsMetadata() bff.MetadataFunc {
+	base := bff.DefaultMetadata{
 		Bases:               bff.Bases{AdminBase: "/go-admin", APIBase: "/go-json"},
 		CollectionForRecord: collectionForRecord,
 		ResourceAPIPath: func(collection string) string {
 			return "/go-json/go/v2/" + collection
 		},
 	}
+	return func(ctx bff.ScreenContext) map[string]string {
+		meta := base.Metadata(ctx)
+		if ctx.Record != "post" {
+			return meta
+		}
+		collection := collectionForRecord(ctx.Record)
+		if collection != "" {
+			meta["rest_form_action"] = "/go-json/go/v2/" + collection
+		}
+		meta["action_scope"] = bff.ActionScopeContentWrite
+		switch ctx.Variant {
+		case bff.VariantNewForm:
+			meta["form_action"] = "/bff/actions/post.create"
+		case bff.VariantEditForm:
+			if id := recordIDFromEditPath(ctx.Path); id != "" {
+				meta["form_action"] = "/bff/actions/post.update?id=" + id
+			}
+		}
+		return meta
+	}
+}
+
+func recordIDFromEditPath(path string) string {
+	trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/edit")
+	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 {
+		return trimmed[idx+1:]
+	}
+	return ""
 }
 
 func collectionForRecord(id toolset.RecordTypeID) string {

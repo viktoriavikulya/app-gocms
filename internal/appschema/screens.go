@@ -25,6 +25,8 @@ type Registry struct {
 	Special  map[string]render.ScreenModel
 }
 
+const cmsContentActionScope = "admin.content.write"
+
 func NewRegistry() (*Registry, error) {
 	return NewRegistryWithProvider(nil)
 }
@@ -182,7 +184,7 @@ func cmsMetadata() bff.MetadataFunc {
 		if collection != "" {
 			meta["rest_form_action"] = "/go-json/go/v2/" + collection
 		}
-		meta["action_scope"] = bff.ActionScopeContentWrite
+		meta["action_scope"] = cmsContentActionScope
 		switch ctx.Variant {
 		case bff.VariantNewForm:
 			meta["form_action"] = "/bff/actions/post.create"

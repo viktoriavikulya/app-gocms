@@ -129,7 +129,7 @@ func postRow(entry domaincontent.Entry, req bff.HydrateRequest) render.Row {
 				Label:       "Trash",
 				Method:      "POST",
 				Path:        "/bff/actions/post.trash?id=" + string(entry.ID),
-				Scope:       bff.ActionScopeContentWrite,
+				Scope:       cmsContentActionScope,
 				Capability:  modulecms.CapabilityContentWrite,
 				Destructive: true,
 			},

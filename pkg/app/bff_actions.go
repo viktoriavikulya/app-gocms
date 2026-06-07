@@ -17,6 +17,7 @@ import (
 )
 
 const cmsWorkspace = "root"
+const cmsContentActionScope = "admin.content.write"
 
 func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry {
 	descriptors := bff.NewActionRegistry()
@@ -26,7 +27,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			Label:         "Create post",
 			Method:        "POST",
 			Path:          bff.ActionPath("post.create"),
-			Scope:         bff.ActionScopeContentWrite,
+			Scope:         cmsContentActionScope,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
 		},
@@ -35,7 +36,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			Label:         "Update post",
 			Method:        "POST",
 			Path:          bff.ActionPath("post.update"),
-			Scope:         bff.ActionScopeContentWrite,
+			Scope:         cmsContentActionScope,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
 		},
@@ -44,7 +45,7 @@ func newCMSActionExecutors(provider storage.StoreProvider) *bff.ExecutorRegistry
 			Label:         "Trash post",
 			Method:        "POST",
 			Path:          bff.ActionPath("post.trash"),
-			Scope:         bff.ActionScopeContentWrite,
+			Scope:         cmsContentActionScope,
 			Capability:    modulecms.CapabilityContentWrite,
 			RequiresToken: true,
 		},

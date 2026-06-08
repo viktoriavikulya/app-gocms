@@ -1,0 +1,94 @@
+package app
+
+import (
+	"net/http"
+	"strings"
+
+	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
+	"github.com/fastygo/app-gocms/internal/appschema"
+	"github.com/fastygo/app-gocms/internal/storage"
+	modulecms "github.com/fastygo/app-gocms/pkg/module"
+	"github.com/fastygo/platform/pkg/bff"
+	"github.com/fastygo/platform/pkg/contracts"
+)
+
+func registerBFFRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary) {
+	executors := newCMSActionExecutors(provider)
+	mux.HandleFunc("GET /bff/screens/{path...}", authBoundary.renderBFFScreen(registry))
+	mux.HandleFunc("GET /bff/nav", authBoundary.renderBFFNav(registry))
+	mux.HandleFunc("GET /bff/session", authBoundary.renderBFFSession())
+	mux.HandleFunc("POST /bff/actions/{actionId}", authBoundary.handleBFFAction(executors))
+}
+
+func (a authBoundary) renderBFFScreen(registry *appschema.Registry) http.HandlerFunc {
+	return a.requireBFFJSON(func(w http.ResponseWriter, r *http.Request) {
+		path := bffScreenPath(r.PathValue("path"))
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.Page(r.Context(), path, principal, queryFromRequest(r))
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, bff.NotFoundScreen("The requested screen was not found."))
+			return
+		}
+		screen := page.Screen
+		if err := a.injectScreenActionToken(&screen); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, screen)
+	})
+}
+
+func (a authBoundary) renderBFFNav(registry *appschema.Registry) http.HandlerFunc {
+	return a.requireBFFJSON(func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.DashboardPage(r.Context(), principal)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, page.Navigation)
+	})
+}
+
+func (a authBoundary) renderBFFSession() http.HandlerFunc {
+	return a.requireBFFJSON(func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := a.principalFromRequest(r)
+		writeJSON(w, http.StatusOK, sessionModelFromPrincipal("gocms-admin", principal))
+	})
+}
+
+func (a authBoundary) requireBFFJSON(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := a.principalFromRequest(r)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, bff.UnauthorizedScreen("Sign in to continue."))
+			return
+		}
+		if !principal.Has(modulecms.CapabilityAdminAccess) {
+			writeJSON(w, http.StatusForbidden, bff.ForbiddenScreen("You do not have permission to access this screen."))
+			return
+		}
+		runtime := contracts.RuntimeContext{ProfileID: "gocms-admin", WorkspaceID: "root", ModuleID: "cms", PrincipalID: principal.ID()}
+		next(w, r.WithContext(contracts.WithRuntimeContext(r.Context(), runtime)))
+	}
+}
+
+func sessionModelFromPrincipal(profileID string, principal appauthn.Principal) bff.SessionModel {
+	capabilities := make([]contracts.CapabilityID, 0, len(principal.Capabilities))
+	for capability := range principal.Capabilities {
+		capabilities = append(capabilities, capability)
+	}
+	return bff.NewSessionModel(profileID, principal.ID(), capabilities)
+}
+
+func bffScreenPath(raw string) string {
+	raw = strings.Trim(raw, "/")
+	if raw == "" {
+		return "/go-admin"
+	}
+	return "/" + raw
+}
+
+func queryFromRequest(r *http.Request) map[string]string {
+	return appschema.QueryFromValues(r.URL.Query())
+}

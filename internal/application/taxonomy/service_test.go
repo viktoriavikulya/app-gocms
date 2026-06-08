@@ -43,29 +43,3 @@ func TestTaxonomyAssignTerms(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestTaxonomyListDefinitionsAndGetTerm(t *testing.T) {
-	provider := storage.NewProvider(contractstest.NewMemoryStorage())
-	err := provider.ForWorkspace("root").WithinTx(context.Background(), func(ctx context.Context, repos storage.Repositories) error {
-		appRepos := storage.NewApplicationRepositories(repos)
-		service := apptaxonomy.NewService(appRepos, appRepos)
-		if err := service.Register(ctx, taxonomy.Definition{Type: "category", Label: "Category", Mode: taxonomy.ModeFlat, Public: true}); err != nil {
-			return err
-		}
-		if err := service.CreateTerm(ctx, taxonomy.Term{ID: "news", TaxonomyType: "category", Name: "News", Slug: "news"}); err != nil {
-			return err
-		}
-		definitions, err := service.ListDefinitions(ctx)
-		if err != nil || len(definitions) != 1 {
-			t.Fatalf("ListDefinitions = %#v err=%v", definitions, err)
-		}
-		term, ok, err := service.GetTerm(ctx, "news")
-		if err != nil || !ok || term.Slug != "news" {
-			t.Fatalf("GetTerm = %#v ok=%v err=%v", term, ok, err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}

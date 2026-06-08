@@ -11,9 +11,7 @@ import (
 type Repository interface {
 	SaveDefinition(context.Context, domaintaxonomy.Definition) error
 	GetDefinition(context.Context, string) (domaintaxonomy.Definition, bool, error)
-	ListDefinitions(context.Context) ([]domaintaxonomy.Definition, error)
 	SaveTerm(context.Context, domaintaxonomy.Term) error
-	GetTerm(context.Context, string) (domaintaxonomy.Term, bool, error)
 	ListTerms(context.Context, string) ([]domaintaxonomy.Term, error)
 }
 
@@ -52,14 +50,6 @@ func (s Service) CreateTerm(ctx context.Context, term domaintaxonomy.Term) error
 		return fmt.Errorf("taxonomy %q is not registered", term.TaxonomyType)
 	}
 	return s.repo.SaveTerm(ctx, term)
-}
-
-func (s Service) ListDefinitions(ctx context.Context) ([]domaintaxonomy.Definition, error) {
-	return s.repo.ListDefinitions(ctx)
-}
-
-func (s Service) GetTerm(ctx context.Context, id string) (domaintaxonomy.Term, bool, error) {
-	return s.repo.GetTerm(ctx, id)
 }
 
 func (s Service) ListTerms(ctx context.Context, taxonomyType string) ([]domaintaxonomy.Term, error) {

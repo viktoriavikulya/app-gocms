@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 
 	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
 	"github.com/fastygo/app-gocms/internal/appschema"
-	"github.com/fastygo/app-gocms/internal/delivery/admin"
 	"github.com/fastygo/app-gocms/internal/delivery/publicsite"
 	"github.com/fastygo/app-gocms/internal/delivery/rest"
 	"github.com/fastygo/app-gocms/internal/extensions"
@@ -30,10 +28,10 @@ import (
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
 	views "github.com/fastygo/app-gocms/pkg/templ"
 	frameworkapp "github.com/fastygo/framework/pkg/app"
+	"github.com/fastygo/platform/pkg/render"
 	frameworkauth "github.com/fastygo/framework/pkg/auth"
 	"github.com/fastygo/framework/pkg/web/security"
 	"github.com/fastygo/platform/pkg/contracts"
-	"github.com/fastygo/platform/pkg/render"
 )
 
 type Options struct {
@@ -47,8 +45,6 @@ type Options struct {
 	SessionKey  string
 	Headless    bool
 	RuntimeMode RuntimeMode
-	HookBus     *extensions.HookBus
-	AuditStore  operations.AuditRecorder
 }
 
 type RuntimeMode string
@@ -75,10 +71,6 @@ func Run() error {
 }
 
 func NewApp(options Options) (*frameworkapp.App, error) {
-	registry, err := registryFromOptions(options)
-	if err != nil {
-		return nil, err
-	}
 	cfg, err := frameworkConfig(options)
 	if err != nil {
 		return nil, err
@@ -87,39 +79,41 @@ func NewApp(options Options) (*frameworkapp.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	registry, err := registryFromOptions(options, provider)
+	if err != nil {
+		return nil, err
+	}
 	authBoundary, err := authFromOptions(options, cfg)
 	if err != nil {
 		return nil, err
 	}
-	hooks, audit := runtimeDeps(options, provider)
 	return frameworkapp.New(cfg).
 		WithSecurity(security.LoadConfig()).
 		WithHealthEndpoints(cfg.HealthLivePath, cfg.HealthReadyPath).
-		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary, mode: runtimeMode(options), hooks: hooks, audit: audit}).
+		WithFeature(feature{registry: registry, provider: provider, auth: authBoundary, mode: runtimeMode(options)}).
 		Build(), nil
 }
 
 func NewMux(options Options) *http.ServeMux {
-	registry, err := registryFromOptions(options)
+	cfg, err := frameworkConfig(options)
+	if err != nil {
+		panic(err)
+	}
+	provider, err := providerFromOptions(context.Background(), options)
+	if err != nil {
+		panic(err)
+	}
+	registry, err := registryFromOptions(options, provider)
 	if err != nil {
 		panic(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(options.StaticDir))))
-	provider, err := providerFromOptions(context.Background(), options)
-	if err != nil {
-		panic(err)
-	}
-	cfg, err := frameworkConfig(options)
-	if err != nil {
-		panic(err)
-	}
 	authBoundary, err := authFromOptions(options, cfg)
 	if err != nil {
 		panic(err)
 	}
-	hooks, audit := runtimeDeps(options, provider)
-	registerRoutesWithOptions(mux, registry, provider, authBoundary, runtimeMode(options), hooks, audit)
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, runtimeMode(options))
 	return mux
 }
 
@@ -128,8 +122,6 @@ type feature struct {
 	provider storage.StoreProvider
 	auth     authBoundary
 	mode     RuntimeMode
-	hooks    *extensions.HookBus
-	audit    operations.AuditRecorder
 }
 
 func (f feature) ID() string {
@@ -141,20 +133,14 @@ func (f feature) NavItems() []frameworkapp.NavItem {
 }
 
 func (f feature) Routes(mux *http.ServeMux) {
-	registerRoutesWithOptions(mux, f.registry, f.provider, f.auth, f.mode, f.hooks, f.audit)
+	registerRoutesWithOptions(mux, f.registry, f.provider, f.auth, f.mode)
 }
 
 func registerRoutes(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary) {
-	registerRoutesWithOptions(mux, registry, provider, authBoundary, RuntimeModeFull, extensions.NewHookBus(), operations.NewStore(100))
+	registerRoutesWithOptions(mux, registry, provider, authBoundary, RuntimeModeFull)
 }
 
-func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary, mode RuntimeMode, hooks *extensions.HookBus, audit operations.AuditRecorder) {
-	if hooks == nil {
-		hooks = extensions.NewHookBus()
-	}
-	if audit == nil {
-		audit = operations.NewStore(100)
-	}
+func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry, provider storage.StoreProvider, authBoundary authBoundary, mode RuntimeMode) {
 	public := publicsite.NewHandler(provider, "root", themes.DefaultRegistry())
 	public.Headless = mode == RuntimeModeHeadless || mode == RuntimeModeAdmin
 	if mode != RuntimeModeHeadless && mode != RuntimeModeAdmin {
@@ -164,20 +150,19 @@ func registerRoutesWithOptions(mux *http.ServeMux, registry *appschema.Registry,
 	mux.HandleFunc("POST /go-login", authBoundary.completeLogin)
 	mux.HandleFunc("GET /go-logout", authBoundary.completeLogout)
 	mux.HandleFunc("POST /go-logout", authBoundary.completeLogout)
+	registerBFFRoutes(mux, registry, provider, authBoundary)
 	if mode != RuntimeModeHeadless {
-		mux.HandleFunc("GET /go-admin", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/go-admin/", http.StatusMovedPermanently)
-		})
-		mux.HandleFunc("GET /go-admin/{$}", authBoundary.requireAdmin(authBoundary.renderAdminDashboard(registry)))
-		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry, provider, hooks, audit))
-		admin.NewHandlerWithDeps(provider, "root", authBoundary, authBoundary, hooks, audit).Register(mux)
+		mux.HandleFunc("GET /go-admin/{$}", authBoundary.renderAdminDashboard(registry))
+		mux.HandleFunc("GET /go-admin/{path...}", authBoundary.renderAdminScreen(registry))
 	}
-	rest.NewHandler(provider, "root", authBoundary.Authorize).WithDeps(hooks, audit, authBoundary.Principal).Register(mux)
-	runtime, err := extensionRuntime(provider, mode, audit)
-	if err != nil {
-		panic(err)
+	rest.NewHandler(provider, "root", authBoundary.Authorize).Register(mux)
+	if mode != RuntimeModeAdmin {
+		runtime, err := extensionRuntime(provider, mode)
+		if err != nil {
+			panic(err)
+		}
+		runtime.RegisterRoutes(mux, authBoundary.Authorize)
 	}
-	runtime.RegisterRoutes(mux, authBoundary.Authorize)
 	if mode != RuntimeModeHeadless && mode != RuntimeModeAdmin {
 		mux.Handle("GET /posts/{slug}", public)
 		mux.Handle("GET /{slug}", public)
@@ -191,98 +176,38 @@ func renderHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-const (
-	actionAdminWrite     = "admin-write"
-	actionContentWrite   = "admin.content.write"
-	actionContentBulk    = "admin.content.bulk"
-	actionMediaUpload    = "admin.media.upload"
-	actionSettingsWrite  = "admin.settings.write"
-	actionMenusWrite     = "admin.menus.write"
-	actionUsersWrite     = "admin.users.write"
-	actionPluginActivate = "admin.plugin.activate"
-	actionThemeActivate  = "admin.theme.activate"
-)
-
-func actionScopeForScreen(screen render.ScreenModel) string {
-	switch screen.Resource {
-	case "settings":
-		return actionSettingsWrite
-	case "menus":
-		return actionMenusWrite
-	case "media_asset", "media":
-		return actionMediaUpload
-	case "author":
-		return actionUsersWrite
-	default:
-		return actionContentWrite
-	}
-}
-
-func (a authBoundary) navLinksForRequest(r *http.Request, registry *appschema.Registry) []views.NavLinkData {
-	principal, ok := a.principalFromRequest(r)
-	links := make([]views.NavLinkData, 0, len(registry.NavItems()))
-	for _, item := range registry.NavItems() {
-		if item.Capability != "" {
-			if !ok || !principal.Has(item.Capability) {
-				continue
-			}
-		}
-		links = append(links, views.NavLinkData{Href: item.Href, Label: item.Label})
-	}
-	return links
-}
-
-func (a authBoundary) renderAdminPage(w http.ResponseWriter, r *http.Request, registry *appschema.Registry, title string, screen render.ScreenModel) error {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return views.Page(views.PageProps{
-		Title:  title,
-		Screen: screen,
-		Nav:    a.navLinksForRequest(r, registry),
-	}).Render(r.Context(), w)
-}
-
 func (a authBoundary) renderAdminDashboard(registry *appschema.Registry) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		screen := registry.DashboardScreen()
-		if err := a.renderAdminPage(w, r, registry, "GoCMS Admin", screen); err != nil {
+	return a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.DashboardPage(r.Context(), principal)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := views.Page(page).Render(r.Context(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-	}
+	})
 }
 
-func (a authBoundary) renderAdminScreen(registry *appschema.Registry, provider storage.StoreProvider, hooks *extensions.HookBus, audit operations.AuditRecorder) http.HandlerFunc {
-	hydrator := appschema.Hydrator{Provider: provider, Workspace: "root", Hooks: hooks, Audit: audit}
+func (a authBoundary) renderAdminScreen(registry *appschema.Registry) http.HandlerFunc {
 	return a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimRight(r.URL.Path, "/")
-		screen, err := registry.Screen(path)
+		principal, _ := a.principalFromRequest(r)
+		page, err := registry.Page(r.Context(), path, principal, queryFromRequest(r))
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`<!doctype html><html><body><main><h1>Admin screen not found</h1><p>The requested admin route is not available.</p></main></body></html>`))
 			return
 		}
-		principal, _ := a.principalFromRequest(r)
-		screen, err = hydrator.Hydrate(r.Context(), screen, path, r.URL.Query(), principal)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
+		if err := a.injectScreenActionToken(&page.Screen); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if screen.Metadata == nil {
-			screen.Metadata = map[string]string{}
-		}
-		if flash := admin.ReadAndClearFlash(w, r); flash != "" {
-			screen.Metadata["flash_error"] = flash
-		}
-		needsToken := string(screen.View) == "form" || len(screen.Rows) > 0
-		if needsToken {
-			token, err := a.actionToken(actionScopeForScreen(screen), 10*time.Minute)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			screen.Metadata["action_token"] = token
-		}
-		if err := a.renderAdminPage(w, r, registry, screen.Title, screen); err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := views.Page(page).Render(r.Context(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
@@ -338,7 +263,7 @@ func (a authBoundary) completeLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
-	if !a.ValidActionToken(r.FormValue("action_token"), "login") {
+	if !a.validActionToken(r.FormValue("action_token"), "login") {
 		http.Error(w, "invalid action token", http.StatusForbidden)
 		return
 	}
@@ -361,7 +286,7 @@ func (a authBoundary) completeLogin(w http.ResponseWriter, r *http.Request) {
 func (a authBoundary) completeLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		_ = r.ParseForm()
-		if token := r.FormValue("action_token"); token != "" && !a.ValidActionToken(token, "logout") {
+		if token := r.FormValue("action_token"); token != "" && !a.validActionToken(token, "logout") {
 			http.Error(w, "invalid action token", http.StatusForbidden)
 			return
 		}
@@ -394,10 +319,6 @@ func (a authBoundary) Authorize(r *http.Request, capability contracts.Capability
 	return true, principal.Has(capability)
 }
 
-func (a authBoundary) Principal(r *http.Request) (appauthn.Principal, bool) {
-	return a.principalFromRequest(r)
-}
-
 func (a authBoundary) principalFromRequest(r *http.Request) (appauthn.Principal, bool) {
 	if claims, ok := a.session.Read(r); ok && claims.PrincipalID != "" {
 		if principal, found := a.service.Principal(contracts.PrincipalID(claims.PrincipalID)); found {
@@ -415,7 +336,30 @@ func (a authBoundary) actionToken(action string, ttl time.Duration) (string, err
 	return frameworkauth.SignedEncode(actionToken{Action: action, Exp: time.Now().Add(ttl).Unix()}, a.secret)
 }
 
-func (a authBoundary) ValidActionToken(raw string, action string) bool {
+func (a authBoundary) injectScreenActionToken(screen *render.ScreenModel) error {
+	if screen.Metadata == nil {
+		screen.Metadata = map[string]string{}
+	}
+	scope := screen.Metadata["action_scope"]
+	if scope == "" {
+		if string(screen.View) != string(render.ViewForm) {
+			return nil
+		}
+		scope = "admin-write"
+	}
+	token, err := a.actionToken(scope, 10*time.Minute)
+	if err != nil {
+		return err
+	}
+	screen.Metadata["action_token"] = token
+	return nil
+}
+
+func (a authBoundary) ValidActionToken(raw, scope string) bool {
+	return a.validActionToken(raw, scope)
+}
+
+func (a authBoundary) validActionToken(raw string, action string) bool {
 	var token actionToken
 	if err := frameworkauth.SignedDecode(raw, a.secret, &token); err != nil {
 		return false
@@ -469,23 +413,14 @@ func providerFromOptions(ctx context.Context, options Options) (storage.StorePro
 			return nil, err
 		}
 	}
-	return sqliteBackedProvider{Provider: storage.NewProvider(store), db: store.DB()}, nil
+	return storage.NewProvider(store), nil
 }
 
-type sqliteBackedProvider struct {
-	storage.Provider
-	db *sql.DB
-}
-
-func (p sqliteBackedProvider) SQLiteDB() *sql.DB {
-	return p.db
-}
-
-func registryFromOptions(options Options) (*appschema.Registry, error) {
+func registryFromOptions(options Options, provider storage.StoreProvider) (*appschema.Registry, error) {
 	if options.Registry != nil {
 		return options.Registry, nil
 	}
-	return appschema.NewRegistry()
+	return appschema.NewRegistryWithProvider(provider)
 }
 
 func frameworkConfig(options Options) (frameworkapp.Config, error) {
@@ -523,40 +458,14 @@ func runtimeMode(options Options) RuntimeMode {
 	if options.RuntimeMode != "" {
 		return options.RuntimeMode
 	}
-	return RuntimeModeFull
+	return RuntimeModeAdmin
 }
 
-func runtimeDeps(options Options, provider storage.StoreProvider) (*extensions.HookBus, operations.AuditRecorder) {
-	if options.HookBus != nil || options.AuditStore != nil {
-		hooks := options.HookBus
-		if hooks == nil {
-			hooks = extensions.NewHookBus()
-		}
-		audit := options.AuditStore
-		if audit == nil {
-			audit = operations.NewStore(100)
-		}
-		return hooks, audit
-	}
-	hooks := extensions.NewHookBus()
-	if sqliteStore, ok := provider.(sqliteStoreProvider); ok {
-		return hooks, operations.NewSQLiteAuditStore(sqliteStore.SQLiteDB(), "root", 1000)
-	}
-	return hooks, operations.NewStore(100)
-}
-
-type sqliteStoreProvider interface {
-	SQLiteDB() *sql.DB
-}
-
-func extensionRuntime(provider storage.StoreProvider, mode RuntimeMode, audit operations.AuditRecorder) (*extensions.Runtime, error) {
-	errStore := operations.NewStore(100)
-	if mem, ok := audit.(*operations.Store); ok {
-		errStore = mem
-	}
+func extensionRuntime(provider storage.StoreProvider, mode RuntimeMode) (*extensions.Runtime, error) {
+	opsStore := operations.NewStore(100)
 	runtime, err := extensions.NewRuntime(
 		graphqlplugin.New(provider),
-		opsplugin.New(provider, audit, errStore, func() string { return string(mode) }),
+		opsplugin.New(provider, opsStore, func() string { return string(mode) }),
 	)
 	if err != nil {
 		return nil, err

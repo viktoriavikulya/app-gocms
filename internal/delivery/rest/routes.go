@@ -7,183 +7,138 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	domaincontent "github.com/fastygo/app-gocms/internal/domain/content"
-	"github.com/fastygo/app-gocms/internal/application/wiring"
-	"github.com/fastygo/app-gocms/internal/sanitize"
 	"github.com/fastygo/app-gocms/internal/domain/contenttype"
 	"github.com/fastygo/app-gocms/internal/domain/media"
+	"github.com/fastygo/app-gocms/internal/domain/menus"
+	"github.com/fastygo/app-gocms/internal/domain/settings"
 	"github.com/fastygo/app-gocms/internal/domain/taxonomy"
-	"github.com/fastygo/app-gocms/internal/operations"
 	modulecms "github.com/fastygo/app-gocms/pkg/module"
-	"github.com/fastygo/app-gocms/pkg/module/capcheck"
 	"github.com/fastygo/app-gocms/pkg/module/codex"
 	"github.com/fastygo/platform/pkg/contracts"
 )
 
-type requestContext struct {
-	includePrivate bool
-}
-
-func (h Handler) readContext(r *http.Request) requestContext {
-	rc := requestContext{}
-	if h.Authorize != nil {
-		authenticated, allowed := h.Authorize(r, modulecms.CapabilityContentPrivate)
-		rc.includePrivate = authenticated && allowed
-	}
-	return rc
-}
-
-func (h Handler) dispatch(ctx context.Context, r *http.Request, path string, s wiring.Services) (int, any) {
-	readCtx := h.readContext(r)
+func (h Handler) dispatch(ctx context.Context, r *http.Request, path string, s services) (int, any) {
 	parts := splitPath(path)
 	switch parts[0] {
 	case "posts", "pages":
-		return h.content(ctx, r, readCtx, parts, s, kindForCollection(parts[0]))
-	case "content":
-		return h.contentTerms(ctx, r, readCtx, parts, s)
+		return h.content(ctx, r, parts, s, kindForCollection(parts[0]))
 	case "content-types":
-		return h.contentTypes(ctx, r, readCtx, parts, s)
+		if r.Method == http.MethodGet && len(parts) == 1 {
+			items, err := s.contentTypes.List(ctx)
+			return result(http.StatusOK, codex.ResourceEnvelope[[]contenttype.Type]{Data: items}, err)
+		}
 	case "taxonomies":
-		return h.taxonomies(ctx, r, readCtx, parts, s)
+		return h.taxonomies(ctx, r, parts, s)
 	case "media":
-		return h.media(ctx, r, readCtx, parts, s)
+		return h.media(ctx, r, parts, s)
 	case "authors":
-		return h.authors(ctx, r, readCtx, parts, s)
+		if r.Method == http.MethodGet && len(parts) == 2 {
+			author, ok, err := s.users.PublicAuthor(ctx, parts[1])
+			if err != nil {
+				return serverError(err)
+			}
+			if !ok {
+				return notFound("author not found")
+			}
+			return http.StatusOK, codex.ResourceEnvelope[any]{Data: author}
+		}
 	case "settings":
-		return h.settings(ctx, r, readCtx, parts, s)
+		if r.Method == http.MethodGet && len(parts) == 1 {
+			items, err := s.settings.Public(ctx)
+			return result(http.StatusOK, codex.ResourceEnvelope[[]settings.Value]{Data: items}, err)
+		}
 	case "menus":
-		return h.menus(ctx, r, readCtx, parts, s)
+		if r.Method == http.MethodGet && len(parts) == 1 {
+			items, err := s.menus.List(ctx)
+			return result(http.StatusOK, codex.ResourceEnvelope[[]menus.Menu]{Data: items}, err)
+		}
+		if r.Method == http.MethodGet && len(parts) == 2 {
+			menu, ok, err := s.menus.ByLocation(ctx, parts[1])
+			if err != nil {
+				return serverError(err)
+			}
+			if !ok {
+				return notFound("menu not found")
+			}
+			return http.StatusOK, codex.ResourceEnvelope[menus.Menu]{Data: menu}
+		}
 	case "search":
 		if r.Method == http.MethodGet {
-			return h.search(ctx, r, readCtx, s)
+			return h.search(ctx, r, s)
 		}
 	}
 	return notFound("route not found")
 }
 
-func (h Handler) content(ctx context.Context, r *http.Request, readCtx requestContext, parts []string, s wiring.Services, kind domaincontent.Kind) (int, any) {
-	if len(parts) >= 3 && parts[2] == "revisions" {
-		return h.contentRevisions(ctx, r, readCtx, parts, s, kind)
-	}
-	if len(parts) == 3 && r.Method == http.MethodPost {
-		switch parts[2] {
-		case "publish":
-			return h.restTransition(ctx, r, s, kind, parts[1], capcheck.CanPublish, operations.ActionRESTContentPublish, func(ctx context.Context, s wiring.Services, id domaincontent.ID) (domaincontent.Entry, error) {
-				return s.Content.Publish(ctx, id)
-			})
-		case "unpublish":
-			return h.restTransition(ctx, r, s, kind, parts[1], capcheck.CanPublish, operations.ActionRESTContentUnpublish, func(ctx context.Context, s wiring.Services, id domaincontent.ID) (domaincontent.Entry, error) {
-				return s.Content.Unpublish(ctx, id)
-			})
-		case "schedule":
-			return h.restSchedule(ctx, r, s, kind, parts[1])
-		case "trash":
-			return h.restTransition(ctx, r, s, kind, parts[1], capcheck.CanDelete, operations.ActionRESTContentTrash, func(ctx context.Context, s wiring.Services, id domaincontent.ID) (domaincontent.Entry, error) {
-				return s.Content.Trash(ctx, id)
-			})
-		case "restore":
-			return h.restTransition(ctx, r, s, kind, parts[1], capcheck.CanRestore, operations.ActionRESTContentRestore, func(ctx context.Context, s wiring.Services, id domaincontent.ID) (domaincontent.Entry, error) {
-				return s.Content.Restore(ctx, id)
-			})
-		case "archive":
-			return h.restTransition(ctx, r, s, kind, parts[1], capcheck.CanArchive, operations.ActionRESTContentArchive, func(ctx context.Context, s wiring.Services, id domaincontent.ID) (domaincontent.Entry, error) {
-				return s.Content.Archive(ctx, id)
-			})
-		}
-	}
+func (h Handler) content(ctx context.Context, r *http.Request, parts []string, s services, kind domaincontent.Kind) (int, any) {
 	switch {
 	case len(parts) == 1 && r.Method == http.MethodGet:
-		return h.contentList(ctx, r, readCtx, s, domaincontent.Query{Kind: kind})
+		return h.contentList(ctx, r, s, domaincontent.Query{Kind: kind})
 	case len(parts) == 1 && r.Method == http.MethodPost:
-		principal, status, payload, ok := h.requirePrincipal(r)
-		if !ok {
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
 			return status, payload
-		}
-		if !capcheck.CanCreate(principal) {
-			return forbidden()
 		}
 		var entry domaincontent.Entry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
 			return validationError(err.Error())
 		}
 		entry.Kind = kind
-		entry.Content = sanitize.HTML(entry.Content)
-		entry.Excerpt = sanitize.HTML(entry.Excerpt)
-		created, err := s.Content.CreateDraft(ctx, entry)
+		created, err := s.content.CreateDraft(ctx, entry)
 		if err == nil && entry.Status == domaincontent.StatusPublished {
-			created, err = s.Content.Publish(ctx, created.ID)
+			created, err = s.content.Publish(ctx, created.ID)
 		}
-		if err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusCreated, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(created, true)}
+		return result(http.StatusCreated, codex.ResourceEnvelope[domaincontent.Entry]{Data: created}, err)
 	case len(parts) == 3 && parts[1] == "by-slug" && r.Method == http.MethodGet:
-		entry, ok, err := s.Content.GetBySlug(ctx, kind, parts[2], !readCtx.includePrivate)
+		items, err := s.content.List(ctx, domaincontent.Query{Kind: kind, Status: domaincontent.StatusPublished})
 		if err != nil {
 			return serverError(err)
 		}
-		if !ok {
-			return notFound("content not found")
+		for _, entry := range items {
+			if entry.Slug == parts[2] && entry.Visibility == domaincontent.VisibilityPublic {
+				return http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}
+			}
 		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(entry, readCtx.includePrivate)}
+		return notFound("content not found")
 	case len(parts) == 2 && r.Method == http.MethodGet:
-		entry, ok, err := s.Content.Get(ctx, domaincontent.ID(parts[1]))
+		entry, ok, err := s.content.Get(ctx, domaincontent.ID(parts[1]))
 		if err != nil {
 			return serverError(err)
 		}
 		if !ok || entry.Kind != kind {
 			return notFound("content not found")
 		}
-		if !readCtx.includePrivate && !IsPublicEntry(entry, time.Now().UTC()) {
-			return notFound("content not found")
-		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(entry, readCtx.includePrivate)}
+		return http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}
 	case len(parts) == 2 && r.Method == http.MethodPatch:
-		principal, status, payload, ok := h.requirePrincipal(r)
-		if !ok {
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
 			return status, payload
 		}
-		existing, ok, err := s.Content.Get(ctx, domaincontent.ID(parts[1]))
+		existing, ok, err := s.content.Get(ctx, domaincontent.ID(parts[1]))
 		if err != nil {
 			return serverError(err)
 		}
 		if !ok {
 			return notFound("content not found")
 		}
-		if !capcheck.CanEdit(principal, existing.AuthorID) {
-			return forbidden()
-		}
 		var patch domaincontent.Entry
 		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 			return validationError(err.Error())
 		}
 		updated := mergeContent(existing, patch)
-		updated.Content = sanitize.HTML(updated.Content)
-		updated.Excerpt = sanitize.HTML(updated.Excerpt)
-		if err := s.Content.Update(ctx, updated); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(updated, true)}
+		err = s.content.Update(ctx, updated)
+		return result(http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: updated}, err)
 	case len(parts) == 2 && r.Method == http.MethodDelete:
-		principal, status, payload, ok := h.requirePrincipal(r)
-		if !ok {
+		if status, payload, ok := h.authorize(r, modulecms.CapabilityContentWrite); !ok {
 			return status, payload
 		}
-		if !capcheck.CanDelete(principal) {
-			return forbidden()
-		}
-		entry, err := s.Content.Trash(ctx, domaincontent.ID(parts[1]))
-		if err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(entry, true)}
+		entry, err := s.content.Trash(ctx, domaincontent.ID(parts[1]))
+		return result(http.StatusOK, codex.ResourceEnvelope[domaincontent.Entry]{Data: entry}, err)
 	}
 	return notFound("route not found")
 }
 
-func (h Handler) contentList(ctx context.Context, r *http.Request, readCtx requestContext, s wiring.Services, query domaincontent.Query) (int, any) {
+func (h Handler) contentList(ctx context.Context, r *http.Request, s services, query domaincontent.Query) (int, any) {
 	page, perPage, err := pagination(r)
 	if err != nil {
 		return validationError(err.Error())
@@ -191,92 +146,38 @@ func (h Handler) contentList(ctx context.Context, r *http.Request, readCtx reque
 	if status := r.URL.Query().Get("status"); status != "" {
 		query.Status = domaincontent.Status(status)
 	}
-	items, err := s.Content.ListFiltered(ctx, query, !readCtx.includePrivate)
+	items, err := s.content.List(ctx, query)
 	if err != nil {
 		return serverError(err)
 	}
-	return http.StatusOK, contentListEnvelope(items, readCtx.includePrivate, page, perPage)
+	return http.StatusOK, listEnvelope(items, page, perPage)
 }
 
-func (h Handler) contentTerms(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	if len(parts) == 3 && parts[2] == "terms" && r.Method == http.MethodPost {
-		if status, payload, ok := h.authorize(r, modulecms.CapabilityTaxonomyAssign); !ok {
-			return status, payload
-		}
-		var request struct {
-			TermIDs []string `json:"term_ids"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			return validationError(err.Error())
-		}
-		entry, err := s.Taxonomy.AssignTerms(ctx, domaincontent.ID(parts[1]), request.TermIDs)
-		if err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(entry, true)}
-	}
-	return notFound("route not found")
-}
-
-func (h Handler) contentTypes(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	switch {
-	case len(parts) == 1 && r.Method == http.MethodGet:
-		items, err := s.ContentTypes.List(ctx)
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]ContentTypeDTO]{Data: projectContentTypes(items)}
-	case len(parts) == 1 && r.Method == http.MethodPost:
-		principal, status, payload, ok := h.requirePrincipal(r)
-		if !ok {
-			return status, payload
-		}
-		if !capcheck.CanCreate(principal) {
-			return forbidden()
-		}
-		var item contenttype.Type
-		if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
-			return validationError(err.Error())
-		}
-		if err := s.ContentTypes.Register(ctx, item); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusCreated, codex.ResourceEnvelope[ContentTypeDTO]{Data: ContentTypeProjection(item)}
-	default:
-		return notFound("route not found")
-	}
-}
-
-func (h Handler) search(ctx context.Context, r *http.Request, readCtx requestContext, s wiring.Services) (int, any) {
-	status, payload := h.contentList(ctx, r, readCtx, s, domaincontent.Query{})
+func (h Handler) search(ctx context.Context, r *http.Request, s services) (int, any) {
+	status, payload := h.contentList(ctx, r, s, domaincontent.Query{})
 	if status != http.StatusOK {
 		return status, payload
 	}
 	q := strings.ToLower(firstNonEmpty(r.URL.Query().Get("q"), r.URL.Query().Get("search")))
-	envelope := payload.(codex.ListEnvelope[ContentDTO])
+	envelope := payload.(codex.ListEnvelope[domaincontent.Entry])
 	if q == "" {
 		return status, envelope
 	}
-	filtered := []ContentDTO{}
+	filtered := []domaincontent.Entry{}
 	for _, entry := range envelope.Data {
-		if strings.Contains(strings.ToLower(delocalize(entry.Slug)), q) ||
-			strings.Contains(strings.ToLower(delocalize(entry.Content)), q) ||
-			strings.Contains(strings.ToLower(delocalize(entry.Title)), q) {
+		if strings.Contains(strings.ToLower(entry.Slug), q) || strings.Contains(strings.ToLower(entry.Content), q) || strings.Contains(strings.ToLower(entry.Title["en"]), q) {
 			filtered = append(filtered, entry)
 		}
 	}
 	return http.StatusOK, listEnvelope(filtered, envelope.Pagination.Page, envelope.Pagination.PerPage)
 }
 
-func (h Handler) taxonomies(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	switch {
-	case len(parts) == 1 && r.Method == http.MethodGet:
-		items, err := s.Taxonomy.ListDefinitions(ctx)
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]TaxonomyDTO]{Data: projectTaxonomies(items)}
-	case len(parts) == 1 && r.Method == http.MethodPost:
+func (h Handler) taxonomies(ctx context.Context, r *http.Request, parts []string, s services) (int, any) {
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		// Taxonomies are intentionally exposed as resources without pagination, matching the current AppCMS codex shell.
+		return http.StatusOK, codex.ResourceEnvelope[[]taxonomy.Definition]{Data: []taxonomy.Definition{}}
+	}
+	if len(parts) == 1 && r.Method == http.MethodPost {
 		if status, payload, ok := h.authorize(r, modulecms.CapabilityTaxonomyManage); !ok {
 			return status, payload
 		}
@@ -284,17 +185,13 @@ func (h Handler) taxonomies(ctx context.Context, r *http.Request, _ requestConte
 		if err := json.NewDecoder(r.Body).Decode(&definition); err != nil {
 			return validationError(err.Error())
 		}
-		if err := s.Taxonomy.Register(ctx, definition); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusCreated, codex.ResourceEnvelope[TaxonomyDTO]{Data: TaxonomyProjection(definition)}
-	case len(parts) == 2 && r.Method == http.MethodGet:
-		items, err := s.Taxonomy.ListTerms(ctx, parts[1])
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]TermDTO]{Data: projectTerms(items)}
-	case len(parts) == 3 && parts[2] == "terms" && r.Method == http.MethodPost:
+		return result(http.StatusCreated, codex.ResourceEnvelope[taxonomy.Definition]{Data: definition}, s.taxonomy.Register(ctx, definition))
+	}
+	if len(parts) == 3 && parts[2] == "terms" && r.Method == http.MethodGet {
+		items, err := s.taxonomy.ListTerms(ctx, parts[1])
+		return result(http.StatusOK, codex.ResourceEnvelope[[]taxonomy.Term]{Data: items}, err)
+	}
+	if len(parts) == 3 && parts[2] == "terms" && r.Method == http.MethodPost {
 		if status, payload, ok := h.authorize(r, modulecms.CapabilityTaxonomyAssign); !ok {
 			return status, payload
 		}
@@ -303,33 +200,17 @@ func (h Handler) taxonomies(ctx context.Context, r *http.Request, _ requestConte
 			return validationError(err.Error())
 		}
 		term.TaxonomyType = parts[1]
-		if err := s.Taxonomy.CreateTerm(ctx, term); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusCreated, codex.ResourceEnvelope[TermDTO]{Data: TermProjection(term)}
-	case len(parts) == 3 && r.Method == http.MethodGet:
-		term, ok, err := s.Taxonomy.GetTerm(ctx, parts[2])
-		if err != nil {
-			return serverError(err)
-		}
-		if !ok || term.TaxonomyType != parts[1] {
-			return notFound("term not found")
-		}
-		return http.StatusOK, codex.ResourceEnvelope[TermDTO]{Data: TermProjection(term)}
-	default:
-		return notFound("route not found")
+		return result(http.StatusCreated, codex.ResourceEnvelope[taxonomy.Term]{Data: term}, s.taxonomy.CreateTerm(ctx, term))
 	}
+	return notFound("route not found")
 }
 
-func (h Handler) media(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	switch {
-	case len(parts) == 1 && r.Method == http.MethodGet:
-		items, err := s.Media.List(ctx)
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]MediaDTO]{Data: projectMediaList(items)}
-	case len(parts) == 1 && r.Method == http.MethodPost:
+func (h Handler) media(ctx context.Context, r *http.Request, parts []string, s services) (int, any) {
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		items, err := s.media.List(ctx)
+		return result(http.StatusOK, codex.ResourceEnvelope[[]media.Asset]{Data: items}, err)
+	}
+	if len(parts) == 1 && r.Method == http.MethodPost {
 		if status, payload, ok := h.authorize(r, modulecms.CapabilityMediaUpload); !ok {
 			return status, payload
 		}
@@ -337,110 +218,19 @@ func (h Handler) media(ctx context.Context, r *http.Request, _ requestContext, p
 		if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
 			return validationError(err.Error())
 		}
-		if err := s.Media.SaveMetadata(ctx, asset); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusCreated, codex.ResourceEnvelope[MediaDTO]{Data: MediaProjection(asset)}
-	case len(parts) == 2 && r.Method == http.MethodGet:
-		asset, ok, err := s.Media.Get(ctx, parts[1])
+		return result(http.StatusCreated, codex.ResourceEnvelope[media.Asset]{Data: asset}, s.media.SaveMetadata(ctx, asset))
+	}
+	if len(parts) == 2 && r.Method == http.MethodGet {
+		asset, ok, err := s.media.Get(ctx, parts[1])
 		if err != nil {
 			return serverError(err)
 		}
 		if !ok {
 			return notFound("media asset not found")
 		}
-		return http.StatusOK, codex.ResourceEnvelope[MediaDTO]{Data: MediaProjection(asset)}
-	case len(parts) == 2 && r.Method == http.MethodDelete:
-		principal, status, payload, ok := h.requirePrincipal(r)
-		if !ok {
-			return status, payload
-		}
-		if !principal.Has(modulecms.CapabilityMediaDelete) {
-			return forbidden()
-		}
-		if err := s.Media.Delete(ctx, parts[1]); err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusNoContent, nil
-	case len(parts) == 2 && r.Method == http.MethodPatch:
-		if status, payload, ok := h.authorize(r, modulecms.CapabilityMediaEdit); !ok {
-			return status, payload
-		}
-		var asset media.Asset
-		if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
-			return validationError(err.Error())
-		}
-		asset.ID = parts[1]
-		if err := s.Media.Update(ctx, asset); err != nil {
-			return errorResponse(err)
-		}
-		updated, ok, err := s.Media.Get(ctx, parts[1])
-		if err != nil {
-			return serverError(err)
-		}
-		if !ok {
-			return notFound("media asset not found")
-		}
-		return http.StatusOK, codex.ResourceEnvelope[MediaDTO]{Data: MediaProjection(updated)}
-	case len(parts) == 4 && parts[2] == "featured" && r.Method == http.MethodPost:
-		if status, payload, ok := h.authorize(r, modulecms.CapabilityMediaEdit); !ok {
-			return status, payload
-		}
-		entry, err := s.Media.AttachFeatured(ctx, domaincontent.ID(parts[3]), parts[1])
-		if err != nil {
-			return errorResponse(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[ContentDTO]{Data: ContentProjection(entry, true)}
-	default:
-		return notFound("route not found")
-	}
-}
-
-func (h Handler) authors(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	if r.Method == http.MethodGet && len(parts) == 2 {
-		author, ok, err := s.Users.PublicAuthor(ctx, parts[1])
-		if err != nil {
-			return serverError(err)
-		}
-		if !ok {
-			return notFound("author not found")
-		}
-		return http.StatusOK, codex.ResourceEnvelope[AuthorDTO]{Data: AuthorProjection(author, resolveAvatarURL(ctx, s.Media, author.AvatarID))}
+		return http.StatusOK, codex.ResourceEnvelope[media.Asset]{Data: asset}
 	}
 	return notFound("route not found")
-}
-
-func (h Handler) settings(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	if r.Method == http.MethodGet && len(parts) == 1 {
-		items, err := s.Settings.Public(ctx)
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]SettingDTO]{Data: projectPublicSettings(items)}
-	}
-	return notFound("route not found")
-}
-
-func (h Handler) menus(ctx context.Context, r *http.Request, _ requestContext, parts []string, s wiring.Services) (int, any) {
-	switch {
-	case r.Method == http.MethodGet && len(parts) == 1:
-		items, err := s.Menus.List(ctx)
-		if err != nil {
-			return serverError(err)
-		}
-		return http.StatusOK, codex.ResourceEnvelope[[]MenuDTO]{Data: projectMenus(items)}
-	case r.Method == http.MethodGet && len(parts) == 2:
-		menu, ok, err := s.Menus.ByLocation(ctx, parts[1])
-		if err != nil {
-			return serverError(err)
-		}
-		if !ok {
-			return notFound("menu not found")
-		}
-		return http.StatusOK, codex.ResourceEnvelope[MenuDTO]{Data: MenuProjection(menu)}
-	default:
-		return notFound("route not found")
-	}
 }
 
 func kindForCollection(collection string) domaincontent.Kind {
@@ -474,9 +264,6 @@ func mergeContent(existing domaincontent.Entry, patch domaincontent.Entry) domai
 	}
 	if patch.FeaturedMediaID != "" {
 		existing.FeaturedMediaID = patch.FeaturedMediaID
-	}
-	if patch.TermIDs != nil {
-		existing.TermIDs = patch.TermIDs
 	}
 	if patch.Metadata != nil {
 		existing.Metadata = patch.Metadata
@@ -513,10 +300,6 @@ func parsePositive(value string, fallback int) (int, error) {
 		return 0, fmt.Errorf("invalid positive integer")
 	}
 	return parsed, nil
-}
-
-func contentListEnvelope(items []domaincontent.Entry, includePrivate bool, page int, perPage int) codex.ListEnvelope[ContentDTO] {
-	return listEnvelope(projectContentList(items, includePrivate), page, perPage)
 }
 
 func listEnvelope[T any](items []T, page int, perPage int) codex.ListEnvelope[T] {

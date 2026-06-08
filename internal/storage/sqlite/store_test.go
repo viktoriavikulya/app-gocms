@@ -136,8 +136,8 @@ func TestSeedMinimalSiteAndRepositoryWrapper(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if posts.TotalItems != 1 || pages.TotalItems != 1 || settings.TotalItems != 3 {
-			t.Fatalf("seed counts posts=%d pages=%d settings=%d, want 1/1/3", posts.TotalItems, pages.TotalItems, settings.TotalItems)
+		if posts.TotalItems != 2 || pages.TotalItems != 1 || settings.TotalItems != 3 {
+			t.Fatalf("seed counts posts=%d pages=%d settings=%d, want 2/1/3", posts.TotalItems, pages.TotalItems, settings.TotalItems)
 		}
 		return nil
 	})

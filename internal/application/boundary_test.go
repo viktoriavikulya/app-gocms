@@ -1,44 +1,46 @@
 package application_test
 
 import (
-	"os/exec"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestApplicationLayerDoesNotImportDeliveryOrPlatformImplementations(t *testing.T) {
-	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", "./internal/application/...")
-	cmd.Dir = "../.."
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list application imports: %v", err)
-	}
+	root := filepath.Join("..", "application")
 	disallowed := []string{
 		"github.com/fastygo/ui8kit",
 		"github.com/fastygo/platform/pkg/modulehost",
 		"github.com/fastygo/platform/pkg/render",
+		"github.com/fastygo/app-gocms/internal/delivery",
 		"net/http",
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 0 {
-			continue
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
 		}
-		pkg := parts[0]
-		imports := ""
-		if len(parts) == 2 {
-			imports = parts[1]
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
 		}
-		for _, imp := range strings.Fields(imports) {
+		for _, imp := range file.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
 			for _, banned := range disallowed {
-				if imp == banned {
-					t.Fatalf("%s directly imports disallowed package %s", pkg, banned)
+				if importPath == banned || strings.HasPrefix(importPath, banned+"/") {
+					t.Errorf("%s must not directly import %s", path, importPath)
 				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk application layer: %v", err)
 	}
 }

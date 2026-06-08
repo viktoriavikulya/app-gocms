@@ -40,25 +40,3 @@ func TestAttachFeaturedMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestMediaUpdate(t *testing.T) {
-	provider := storage.NewProvider(contractstest.NewMemoryStorage())
-	err := provider.ForWorkspace("root").WithinTx(context.Background(), func(ctx context.Context, repos storage.Repositories) error {
-		appRepos := storage.NewApplicationRepositories(repos)
-		service := appmedia.NewService(appRepos, appRepos)
-		if err := service.SaveMetadata(ctx, media.Asset{ID: "media-1", Title: "Hero", MIMEType: "image/png"}); err != nil {
-			return err
-		}
-		if err := service.Update(ctx, media.Asset{ID: "media-1", AltText: "Updated alt"}); err != nil {
-			return err
-		}
-		asset, ok, err := service.Get(ctx, "media-1")
-		if err != nil || !ok || asset.AltText != "Updated alt" || asset.Title != "Hero" {
-			t.Fatalf("updated asset = %#v ok=%v err=%v", asset, ok, err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}

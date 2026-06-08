@@ -60,9 +60,17 @@ func (a ApplicationRepositories) Save(ctx context.Context, entry domaincontent.E
 }
 
 func (a ApplicationRepositories) Get(ctx context.Context, id domaincontent.ID) (domaincontent.Entry, bool, error) {
-	for _, repo := range []RecordRepository{a.repos.Posts, a.repos.Pages} {
-		entry, ok, err := get[domaincontent.Entry](ctx, repo, contracts.RecordID(id))
+	repoKinds := []struct {
+		repo RecordRepository
+		kind domaincontent.Kind
+	}{
+		{a.repos.Posts, domaincontent.KindPost},
+		{a.repos.Pages, domaincontent.KindPage},
+	}
+	for _, item := range repoKinds {
+		entry, ok, err := get[domaincontent.Entry](ctx, item.repo, contracts.RecordID(id))
 		if err == nil && ok {
+			entry = withContentKind(entry, item.kind)
 			return entry, true, nil
 		}
 	}
@@ -83,13 +91,28 @@ func (a ApplicationRepositories) List(ctx context.Context, query domaincontent.Q
 		if err != nil {
 			return nil, err
 		}
+		defaultKind := domaincontent.Kind("")
+		switch repo {
+		case a.repos.Posts:
+			defaultKind = domaincontent.KindPost
+		case a.repos.Pages:
+			defaultKind = domaincontent.KindPage
+		}
 		for _, entry := range items {
+			entry = withContentKind(entry, defaultKind)
 			if query.Status == "" || entry.Status == query.Status {
 				entries = append(entries, entry)
 			}
 		}
 	}
 	return entries, nil
+}
+
+func withContentKind(entry domaincontent.Entry, kind domaincontent.Kind) domaincontent.Entry {
+	if entry.Kind == "" {
+		entry.Kind = kind
+	}
+	return entry
 }
 
 func (a ApplicationRepositories) SaveContentType(ctx context.Context, item contenttype.Type) error {
@@ -134,14 +157,6 @@ func (a ApplicationRepositories) SaveDefinition(ctx context.Context, definition 
 
 func (a ApplicationRepositories) GetDefinition(ctx context.Context, taxonomyType string) (taxonomy.Definition, bool, error) {
 	return get[taxonomy.Definition](ctx, a.repos.Taxonomies, contracts.RecordID(taxonomyType))
-}
-
-func (a ApplicationRepositories) ListDefinitions(ctx context.Context) ([]taxonomy.Definition, error) {
-	return list[taxonomy.Definition](ctx, a.repos.Taxonomies)
-}
-
-func (a ApplicationRepositories) GetTerm(ctx context.Context, id string) (taxonomy.Term, bool, error) {
-	return get[taxonomy.Term](ctx, a.repos.Terms, contracts.RecordID(id))
 }
 
 func (a ApplicationRepositories) SaveTerm(ctx context.Context, term taxonomy.Term) error {
@@ -201,20 +216,6 @@ func (a ApplicationRepositories) SaveRevision(ctx context.Context, revision revi
 
 func (a ApplicationRepositories) GetRevision(ctx context.Context, id string) (revisions.Revision, bool, error) {
 	return get[revisions.Revision](ctx, a.repos.Revisions, contracts.RecordID(id))
-}
-
-func (a ApplicationRepositories) ListRevisionsByEntry(ctx context.Context, entryID domaincontent.ID) ([]revisions.Revision, error) {
-	items, err := list[revisions.Revision](ctx, a.repos.Revisions)
-	if err != nil {
-		return nil, err
-	}
-	filtered := make([]revisions.Revision, 0, len(items))
-	for _, item := range items {
-		if item.EntryID == entryID {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered, nil
 }
 
 func (a ApplicationRepositories) SavePreview(ctx context.Context, access preview.Access) error {

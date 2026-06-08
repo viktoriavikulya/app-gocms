@@ -1,8 +1,11 @@
 package appschema
 
 import (
+	"context"
 	"testing"
 
+	appauthn "github.com/fastygo/app-gocms/internal/application/authn"
+	"github.com/fastygo/platform/pkg/contracts"
 	"github.com/fastygo/platform/pkg/render"
 )
 
@@ -22,34 +25,49 @@ func TestScreensUsePlatformRendererModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if form.View != render.ViewForm || form.Metadata["form_action"] != "/go-admin/posts" || len(form.Fields) == 0 {
+	if form.View != render.ViewForm || form.Metadata["form_action"] != "/bff/actions/post.create" || len(form.Fields) == 0 {
 		t.Fatalf("unexpected form screen: %#v", form)
+	}
+	if form.Metadata["action_scope"] != "admin.content.write" {
+		t.Fatalf("expected scoped action token metadata: %#v", form.Metadata)
+	}
+	edit, err := registry.Screen("/go-admin/posts/post-1/edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edit.Metadata["form_action"] != "/bff/actions/post.update?id=post-1" {
+		t.Fatalf("unexpected edit form action: %#v", edit.Metadata)
 	}
 }
 
-func TestTaxonomyTypeTermsPathResolves(t *testing.T) {
+func TestPageUsesPlatformBFFRuntime(t *testing.T) {
 	registry, err := NewRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := registry.Screen("/go-admin/taxonomies/category/terms")
+	store, err := appauthn.NewSeededMemoryStore()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if table.View != render.ViewTable || table.Metadata["taxonomy_type"] != "category" {
-		t.Fatalf("unexpected taxonomy terms table: %#v", table)
+	principal, ok := appauthn.NewService(store).Principal(contracts.PrincipalID("admin"))
+	if !ok {
+		t.Fatal("expected admin principal")
 	}
-	if table.Metadata["list_path"] != "/go-admin/taxonomies/category/terms" {
-		t.Fatalf("unexpected list_path: %#v", table.Metadata)
-	}
-	form, err := registry.Screen("/go-admin/taxonomies/category/terms/new")
+	page, err := registry.Page(context.Background(), "/go-admin/posts", principal, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if form.View != render.ViewForm || form.Metadata["taxonomy_type"] != "category" {
-		t.Fatalf("unexpected taxonomy terms form: %#v", form)
+	if page.Shell.Product != "GoCMS Admin" || len(page.Navigation.Items) == 0 {
+		t.Fatalf("unexpected page shell/nav: %#v", page)
 	}
-	if form.Metadata["form_action"] != "/go-admin/taxonomies/category/terms" {
-		t.Fatalf("unexpected form_action: %#v", form.Metadata)
+	if page.Screen.View != render.ViewTable || page.Screen.Title != "Posts" {
+		t.Fatalf("unexpected page screen: %#v", page.Screen)
+	}
+	dashboard, err := registry.DashboardPage(context.Background(), principal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.Screen.View != render.ViewType("dashboard") {
+		t.Fatalf("unexpected dashboard screen: %#v", dashboard.Screen)
 	}
 }

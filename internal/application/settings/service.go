@@ -3,10 +3,8 @@ package settings
 import (
 	"context"
 	"fmt"
-	"time"
 
 	domainsettings "github.com/fastygo/app-gocms/internal/domain/settings"
-	"github.com/fastygo/app-gocms/internal/extensions"
 )
 
 type Repository interface {
@@ -30,17 +28,10 @@ func NewRegistry(definitions ...domainsettings.Definition) Registry {
 type Service struct {
 	repo     Repository
 	registry Registry
-	hooks    *extensions.HookBus
-	now      func() time.Time
 }
 
 func NewService(repo Repository, registry Registry) Service {
-	return Service{repo: repo, registry: registry, now: time.Now}
-}
-
-func (s Service) WithHooks(bus *extensions.HookBus) Service {
-	s.hooks = bus
-	return s
+	return Service{repo: repo, registry: registry}
 }
 
 func (s Service) Save(ctx context.Context, value domainsettings.Value) error {
@@ -51,21 +42,7 @@ func (s Service) Save(ctx context.Context, value domainsettings.Value) error {
 		value.Group = definition.Group
 		value.Public = definition.Public
 	}
-	if err := s.dispatch(ctx, extensions.HookSettingsUpdateBefore, value); err != nil {
-		return err
-	}
-	if err := s.repo.SaveSetting(ctx, value); err != nil {
-		return err
-	}
-	_ = s.dispatch(ctx, extensions.HookSettingsUpdateAfter, value)
-	return nil
-}
-
-func (s Service) dispatch(ctx context.Context, hook string, entity any) error {
-	if s.hooks == nil {
-		return nil
-	}
-	return s.hooks.Dispatch(ctx, hook, extensions.HookPayload{Hook: hook, Entity: entity, OccurredAt: s.now().UTC()})
+	return s.repo.SaveSetting(ctx, value)
 }
 
 func (s Service) Get(ctx context.Context, key string) (domainsettings.Value, bool, error) {

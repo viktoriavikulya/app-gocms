@@ -13,16 +13,12 @@ import (
 
 type Plugin struct {
 	Provider storage.StoreProvider
-	Audit    operations.AuditRecorder
-	Errors   *operations.Store
+	Store    *operations.Store
 	Runtime  func() string
 }
 
-func New(provider storage.StoreProvider, audit operations.AuditRecorder, errors *operations.Store, runtime func() string) Plugin {
-	if errors == nil {
-		errors = operations.NewStore(100)
-	}
-	return Plugin{Provider: provider, Audit: audit, Errors: errors, Runtime: runtime}
+func New(provider storage.StoreProvider, store *operations.Store, runtime func() string) Plugin {
+	return Plugin{Provider: provider, Store: store, Runtime: runtime}
 }
 
 func (p Plugin) Manifest() extensions.Manifest {
@@ -40,31 +36,25 @@ func (p Plugin) Register(_ context.Context, registry *extensions.Context) error 
 }
 
 func (p Plugin) health(w http.ResponseWriter, r *http.Request) {
-	write(w, http.StatusOK, map[string]any{"checks": operations.Health(r.Context(), p.Provider, p.Errors, p.runtimeState())})
+	write(w, http.StatusOK, map[string]any{"checks": operations.Health(r.Context(), p.Provider, p.Store, p.runtimeState())})
 }
 
 func (p Plugin) audit(w http.ResponseWriter, _ *http.Request) {
-	events := []operations.AuditEvent{}
-	if p.Audit != nil {
-		events = p.Audit.Audit()
-	}
-	write(w, http.StatusOK, map[string]any{"events": events})
+	write(w, http.StatusOK, map[string]any{"events": p.Store.Audit()})
 }
 
 func (p Plugin) errors(w http.ResponseWriter, _ *http.Request) {
-	write(w, http.StatusOK, map[string]any{"errors": p.Errors.Errors()})
+	write(w, http.StatusOK, map[string]any{"errors": p.Store.Errors()})
 }
 
 func (p Plugin) exportSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := operations.ExportSnapshot(r.Context(), p.Provider)
 	if err != nil {
-		p.Errors.RecordError(operations.ErrorRecord{Source: "snapshot.export", Message: err.Error()})
+		p.Store.RecordError(operations.ErrorRecord{Source: "snapshot.export", Message: err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if p.Audit != nil {
-		p.Audit.RecordAudit(operations.AuditEvent{Action: "snapshot.export", Actor: "admin", Resource: "snapshot"})
-	}
+	p.Store.RecordAudit(operations.AuditEvent{Action: "snapshot.export", Actor: "admin", Resource: "snapshot"})
 	write(w, http.StatusOK, snapshot)
 }
 
@@ -79,13 +69,11 @@ func (p Plugin) importSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := operations.ImportSnapshot(r.Context(), p.Provider, snapshot); err != nil {
-		p.Errors.RecordError(operations.ErrorRecord{Source: "snapshot.import", Message: err.Error()})
+		p.Store.RecordError(operations.ErrorRecord{Source: "snapshot.import", Message: err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if p.Audit != nil {
-		p.Audit.RecordAudit(operations.AuditEvent{Action: "snapshot.import", Actor: "admin", Resource: "snapshot"})
-	}
+	p.Store.RecordAudit(operations.AuditEvent{Action: "snapshot.import", Actor: "admin", Resource: "snapshot"})
 	write(w, http.StatusOK, map[string]any{"status": "imported"})
 }
 

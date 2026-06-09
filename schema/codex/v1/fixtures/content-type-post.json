@@ -1,0 +1,12 @@
+{
+  "id": "post",
+  "label": "Post",
+  "permalink_pattern": "/posts/{slug}",
+  "public": true,
+  "supports": {
+    "title": true,
+    "editor": true,
+    "excerpt": true,
+    "featured_media": true
+  }
+}

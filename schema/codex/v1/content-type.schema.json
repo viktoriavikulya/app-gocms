@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fastygo.dev/schema/codex/v1/content-type.schema.json",
+  "title": "Codex ContentType",
+  "description": "codex.v1 content type definition",
+  "type": "object",
+  "required": ["id", "label", "permalink_pattern", "public", "supports"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "label": { "type": "string", "minLength": 1 },
+    "permalink_pattern": { "type": "string", "minLength": 1 },
+    "public": { "type": "boolean" },
+    "supports": { "$ref": "#/$defs/supports" }
+  },
+  "$defs": {
+    "supports": {
+      "type": "object",
+      "required": ["title", "editor", "excerpt", "featured_media"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "boolean" },
+        "editor": { "type": "boolean" },
+        "excerpt": { "type": "boolean" },
+        "featured_media": { "type": "boolean" }
+      }
+    }
+  }
+}

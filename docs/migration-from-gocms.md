@@ -4,8 +4,13 @@ This document describes the first Platform-based GoCMS replacement path.
 
 For the full AppCMS guide, start at [docs/README.md](README.md).
 
-Current GoCMS remains the compatibility oracle. AppCMS is the runnable
+Current GoCMS remains the compatibility oracle for behavior. AppCMS is the runnable
 replacement assembly. The CMS module in `pkg/module` owns domain schemas and descriptors.
+
+**Data contract:** `@AppCMS/schema/codex/v1/` JSON schemas are the canonical source
+of truth for serialized CMS data. GoCMS prose references live under
+[docs/compat/gocms/](compat/gocms/). Adapter alignment:
+[codex-schema-alignment.md](appcms/codex-schema-alignment.md).
 
 ## Architecture Mapping
 

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fastygo.dev/schema/codex/v1/content-entry.schema.json",
+  "title": "Codex ContentEntry",
+  "description": "codex.v1 post or page content entry",
+  "type": "object",
+  "required": ["id", "kind", "status", "visibility"],
+  "additionalProperties": true,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "type": "string", "enum": ["post", "page"] },
+    "title": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "minProperties": 1
+        }
+      ]
+    },
+    "slug": { "type": "string" },
+    "content": { "type": "string" },
+    "excerpt": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "scheduled", "published", "archived", "trashed"]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["public", "private", "password"]
+    },
+    "author_id": { "type": "string" },
+    "featured_media_id": { "type": "string" },
+    "term_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "taxonomy_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "GoCMS compatibility alias; prefer term_ids in new payloads"
+    },
+    "template": { "type": "string" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "published_at": { "type": "string", "format": "date-time" },
+    "scheduled_for": { "type": "string", "format": "date-time" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "deleted_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "codex_version": "codex.v1",
+  "site": {
+    "title": "AppCMS",
+    "description": "A FastyGo powered site.",
+    "locale": "en"
+  },
+  "content_types": [
+    {
+      "id": "post",
+      "label": "Post",
+      "permalink_pattern": "/posts/{slug}",
+      "public": true,
+      "supports": {
+        "title": true,
+        "editor": true,
+        "excerpt": true,
+        "featured_media": true
+      }
+    },
+    {
+      "id": "page",
+      "label": "Page",
+      "permalink_pattern": "/{slug}",
+      "public": true,
+      "supports": {
+        "title": true,
+        "editor": true,
+        "excerpt": false,
+        "featured_media": true
+      }
+    }
+  ],
+  "content_entries": [
+    {
+      "id": "hello-world",
+      "kind": "post",
+      "title": { "en": "Hello world" },
+      "slug": "hello-world",
+      "content": "",
+      "excerpt": "",
+      "status": "published",
+      "visibility": "public",
+      "author_id": "admin",
+      "featured_media_id": "",
+      "term_ids": [],
+      "metadata": {},
+      "published_at": "2024-01-15T12:00:00Z",
+      "scheduled_for": "0001-01-01T00:00:00Z",
+      "created_at": "2024-01-15T12:00:00Z",
+      "updated_at": "2024-01-15T12:00:00Z"
+    },
+    {
+      "id": "rest-post",
+      "kind": "post",
+      "title": { "en": "REST Post" },
+      "slug": "rest-post",
+      "content": "Hello REST",
+      "excerpt": "",
+      "status": "published",
+      "visibility": "public",
+      "author_id": "admin",
+      "featured_media_id": "",
+      "term_ids": [],
+      "metadata": {},
+      "published_at": "2024-01-15T12:00:00Z",
+      "scheduled_for": "0001-01-01T00:00:00Z",
+      "created_at": "2024-01-15T12:00:00Z",
+      "updated_at": "2024-01-15T12:00:00Z"
+    },
+    {
+      "id": "about",
+      "kind": "page",
+      "title": { "en": "About" },
+      "slug": "about",
+      "content": "",
+      "excerpt": "",
+      "status": "published",
+      "visibility": "public",
+      "author_id": "admin",
+      "featured_media_id": "",
+      "term_ids": [],
+      "metadata": {},
+      "published_at": "2024-01-15T12:00:00Z",
+      "scheduled_for": "0001-01-01T00:00:00Z",
+      "created_at": "2024-01-15T12:00:00Z",
+      "updated_at": "2024-01-15T12:00:00Z"
+    }
+  ],
+  "menus": [
+    {
+      "id": "primary",
+      "location": "primary",
+      "items": [
+        {
+          "id": "about",
+          "label": "About",
+          "url": "/about",
+          "parent_id": ""
+        }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "site.title",
+      "group": "site",
+      "value": "AppCMS",
+      "public": true
+    },
+    {
+      "key": "site.description",
+      "group": "site",
+      "value": "A FastyGo powered site.",
+      "public": true
+    },
+    {
+      "key": "theme.active",
+      "group": "theme",
+      "value": "gocms-default",
+      "public": true
+    }
+  ]
+}

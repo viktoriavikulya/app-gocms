@@ -8,7 +8,10 @@ AppCMS is the runnable **GoCMS compatibility target** on the shared stack:
 - **Platform** — module contracts, toolset, panel, profiles, render models
 - **Templ** — shared UI primitives for admin and public views
 
-Legacy **GoCMS** (`@GoCMS`) remains the **behavior oracle** via `go-codex/en`. AppCMS ports observable behavior deliberately; it does not reintroduce UI8Kit.
+Legacy **GoCMS** (`@GoCMS`) remains the **behavior oracle** for parity work. AppCMS
+preserves summarized oracle docs under [compat/gocms](compat/gocms/). The
+**machine-readable CMS data contract** is
+[schema/codex/v1](../schema/codex/v1/README.md).
 
 ## Who this guide is for
 

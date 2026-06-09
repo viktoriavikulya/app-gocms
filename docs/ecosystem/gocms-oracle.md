@@ -17,15 +17,25 @@
 - Monolithic `internal/platform` wiring — replaced by Framework + Platform modulehost
 - Direct imports of GoCMS from AppCMS production code
 
-## Codex documents (typical)
+## Codex documents
+
+**Machine-readable contract (canonical):** `@AppCMS/schema/codex/v1/` — JSON schemas
+for content entries, content types, menus, REST envelopes, errors, and seed
+bundles. See [Codex v1 README](../../schema/codex/v1/README.md).
+
+**GoCMS oracle prose (reference):** `@AppCMS/docs/compat/gocms/` — summarized
+REST, content, domain, storage, and adapter guidance preserved after `@GoCMS`
+leaves the workspace.
 
 | Document | Topic |
 |----------|-------|
 | REST / API shape | Discovery, list envelopes, error codes |
-| Admin contract | Root `/go-admin` behavior |
-| Theme contract | Manifest fields, template roles |
-| Plugin contract | Lifecycle, active-only exposure |
-| Hooks contract | Action/filter priority and error policy |
+| Content contract | Kinds, statuses, fields, lifecycle |
+| Domain / storage | Package boundaries, repository ports |
+| Admin contract | Root `/go-admin` behavior (GoCMS codex) |
+| Theme contract | Manifest fields, template roles (GoCMS codex) |
+| Plugin contract | Lifecycle, active-only exposure (GoCMS codex) |
+| Hooks contract | Action/filter priority and error policy (GoCMS codex) |
 
 When AppCMS behavior intentionally differs, document the gap in [migration-from-gocms.md](../migration-from-gocms.md) or product progress notes—not by silently changing URLs.
 

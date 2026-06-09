@@ -14,6 +14,7 @@ This section documents **this repository** (`github.com/fastygo/app-gocms`): pac
 | [Public site and themes](public-site-and-themes.md) | Permalinks, assembler, theme registry |
 | [Extensions and operations](extensions-and-operations.md) | Plugins, GraphQL, snapshots, health |
 | [Runtime profiles](runtime-profiles.md) | full, headless, admin, conformance |
+| [Codex schema alignment](codex-schema-alignment.md) | JSON schemas, adapter mapping, validation |
 
 ## Module summary (`pkg/module`)
 

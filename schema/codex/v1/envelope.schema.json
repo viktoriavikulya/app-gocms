@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fastygo.dev/schema/codex/v1/envelope.schema.json",
+  "title": "Codex Envelopes",
+  "description": "codex.v1 REST discovery, list, and resource envelopes",
+  "oneOf": [
+    { "$ref": "#/$defs/discovery" },
+    { "$ref": "#/$defs/listEnvelope" },
+    { "$ref": "#/$defs/resourceEnvelope" }
+  ],
+  "$defs": {
+    "route": {
+      "type": "object",
+      "required": ["methods", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "links": {
+      "type": "object",
+      "required": ["self"],
+      "additionalProperties": false,
+      "properties": {
+        "self": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string" },
+        "admin": { "type": "string" }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "required": ["name", "version", "routes", "authentication", "links"],
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "routes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/route" }
+        },
+        "authentication": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "links": { "$ref": "#/$defs/links" }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "required": ["page", "per_page", "total", "total_pages"],
+      "additionalProperties": false,
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "per_page": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "total_pages": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "listEnvelope": {
+      "type": "object",
+      "required": ["data", "pagination"],
+      "additionalProperties": true,
+      "properties": {
+        "data": {
+          "type": "array"
+        },
+        "pagination": { "$ref": "#/$defs/pagination" },
+        "links": { "type": "object" },
+        "meta": { "type": "object" }
+      }
+    },
+    "resourceEnvelope": {
+      "allOf": [
+        {
+          "type": "object",
+          "required": ["data"],
+          "additionalProperties": true,
+          "properties": {
+            "data": {},
+            "links": { "type": "object" },
+            "meta": { "type": "object" }
+          }
+        },
+        {
+          "not": {
+            "required": ["pagination"]
+          }
+        }
+      ]
+    }
+  }
+}

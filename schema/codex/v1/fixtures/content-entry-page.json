@@ -1,0 +1,19 @@
+{
+  "id": "about",
+  "kind": "page",
+  "title": { "en": "About" },
+  "slug": "about",
+  "content": "",
+  "excerpt": "",
+  "status": "published",
+  "visibility": "public",
+  "author_id": "admin",
+  "featured_media_id": "",
+  "term_ids": [],
+  "template": "default",
+  "metadata": {},
+  "published_at": "2024-01-15T12:00:00Z",
+  "scheduled_for": "0001-01-01T00:00:00Z",
+  "created_at": "2024-01-15T12:00:00Z",
+  "updated_at": "2024-01-15T12:00:00Z"
+}

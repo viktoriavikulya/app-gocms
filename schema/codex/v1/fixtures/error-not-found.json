@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "route not found",
+    "status": 404
+  }
+}

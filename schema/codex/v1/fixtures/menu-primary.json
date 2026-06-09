@@ -1,0 +1,12 @@
+{
+  "id": "primary",
+  "location": "primary",
+  "items": [
+    {
+      "id": "about",
+      "label": "About",
+      "url": "/about",
+      "parent_id": ""
+    }
+  ]
+}

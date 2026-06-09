@@ -57,7 +57,8 @@ See [URL contracts](appcms/url-contracts.md) for route tables and runtime profil
 
 ## Related documents
 
-- [Migration from GoCMS](migration-from-gocms.md) — mapping table from legacy monolith areas to AppCMS owners
+- [Codex v1 schemas](../schema/codex/v1/README.md) — canonical CMS data contract
+- [GoCMS migration mapping](compat/gocms/migration-mapping.md) — legacy monolith areas to AppCMS owners
 - [Platform current progress](../../@Platform/.project/current-progress.md) — slice checklist for the whole product stack (sibling repo)
 
 ## Suggested reading order

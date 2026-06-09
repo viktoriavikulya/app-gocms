@@ -37,11 +37,11 @@ leaves the workspace.
 | Plugin contract | Lifecycle, active-only exposure (GoCMS codex) |
 | Hooks contract | Action/filter priority and error policy (GoCMS codex) |
 
-When AppCMS behavior intentionally differs, document the gap in [migration-from-gocms.md](../migration-from-gocms.md) or product progress notes—not by silently changing URLs.
+When AppCMS behavior intentionally differs, document the gap in [migration mapping](../compat/gocms/migration-mapping.md), [Codex schema alignment](../appcms/codex-schema-alignment.md), or product progress notes—not by silently changing URLs.
 
 ## Migration mapping
 
-See [migration-from-gocms.md](../migration-from-gocms.md) for the first mapping table:
+See [migration-mapping.md](../compat/gocms/migration-mapping.md) for the architecture mapping table:
 
 | GoCMS area | AppCMS owner |
 |------------|--------------|

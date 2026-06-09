@@ -8,7 +8,8 @@ source of truth.
 
 Use `@AppCMS/schema/codex/v1/` JSON schemas for serialized CMS data shapes.
 When prose and schema disagree during migration, schemas win for new work; file
-gaps in [migration-from-gocms.md](../../migration-from-gocms.md).
+intentional gaps in [Codex schema alignment](../../appcms/codex-schema-alignment.md)
+or [migration mapping](migration-mapping.md).
 
 ## Preserved references
 
@@ -19,12 +20,13 @@ gaps in [migration-from-gocms.md](../../migration-from-gocms.md).
 | [01-domain-model.md](01-domain-model.md) | `@GoCMS/go-stack/en/01-domain-model.md` | Recommended domain package boundaries |
 | [03-storage-repositories.md](03-storage-repositories.md) | `@GoCMS/go-stack/en/03-storage-repositories.md` | Repository ports, IDs, metadata, migrations |
 | [04-rest-graphql-adapters.md](04-rest-graphql-adapters.md) | `@GoCMS/go-stack/en/04-rest-graphql-adapters.md` | REST/GraphQL adapter rules over services |
+| [migration-mapping.md](migration-mapping.md) | Former `docs/migration-from-gocms.md` | Legacy-to-AppCMS architecture mapping |
 
 ## Related
 
 - [Codex v1 schemas](../../../schema/codex/v1/README.md)
+- [Codex schema alignment](../../appcms/codex-schema-alignment.md)
 - [GoCMS oracle (ecosystem)](../../ecosystem/gocms-oracle.md)
-- [Migration from GoCMS](../../migration-from-gocms.md)
 
 ## Note on `@GoCMS` removal
 

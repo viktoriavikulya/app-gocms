@@ -34,7 +34,7 @@ accidental code drift.
 | `error.schema.json` | `pkg/module/codex/routes.go` (`ErrorEnvelope`) | REST error responses |
 | `seed-site.schema.json` | — | JSON seed bundles, fixture imports, BuildY CMS seeds |
 
-Historical GoCMS oracle docs live under [docs/compat/gocms/](../../docs/compat/gocms/).
+Historical GoCMS oracle docs live under [docs/compat/gocms/](../../../docs/compat/gocms/).
 They explain compatibility intent; they are **not** the machine-readable contract.
 
 ## Boundaries
@@ -117,7 +117,8 @@ go test ./pkg/conformance/codex/...
 
 ## Related docs
 
-- [GoCMS compatibility references](../../docs/compat/gocms/README.md)
-- [Migration from GoCMS](../../docs/migration-from-gocms.md)
-- [GoCMS oracle (ecosystem)](../../docs/ecosystem/gocms-oracle.md)
-- [Platform BFF v1](../../../@Platform/schema/bff/v1/README.md) — separate renderer contract
+- [GoCMS compatibility references](../../../docs/compat/gocms/README.md)
+- [Codex schema alignment](../../../docs/appcms/codex-schema-alignment.md)
+- [Migration mapping](../../../docs/compat/gocms/migration-mapping.md)
+- [GoCMS oracle (ecosystem)](../../../docs/ecosystem/gocms-oracle.md)
+- [Platform BFF v1](../../../../@Platform/schema/bff/v1/README.md) — separate renderer contract

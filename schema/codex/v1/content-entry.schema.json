@@ -33,17 +33,17 @@
     "author_id": { "type": "string" },
     "featured_media_id": { "type": "string" },
     "term_ids": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": { "type": "string" }
     },
     "taxonomy_ids": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": { "type": "string" },
       "description": "GoCMS compatibility alias; prefer term_ids in new payloads"
     },
     "template": { "type": "string" },
     "metadata": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": true
     },
     "published_at": { "type": "string", "format": "date-time" },

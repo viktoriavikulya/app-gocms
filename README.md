@@ -63,5 +63,6 @@ Full **101-level guide** (English): [`docs/README.md`](docs/README.md)
 | AppCMS internals | [`docs/appcms/README.md`](docs/appcms/README.md) |
 | Development | [`docs/development/README.md`](docs/development/README.md) |
 
-See also [`docs/migration-from-gocms.md`](docs/migration-from-gocms.md) for the
-GoCMS migration mapping and compatibility notes.
+See also [`docs/compat/gocms/migration-mapping.md`](docs/compat/gocms/migration-mapping.md) for the
+GoCMS replacement mapping and [`schema/codex/v1/README.md`](schema/codex/v1/README.md) for the
+canonical data contract.

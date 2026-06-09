@@ -46,4 +46,5 @@ Prefer existing stack modules. New shared abstractions belong in Platform only w
 
 - [Testing](testing.md)
 - [Architecture](../architecture/README.md)
-- [Migration from GoCMS](../migration-from-gocms.md)
+- [Codex schema alignment](../appcms/codex-schema-alignment.md)
+- [GoCMS migration mapping](../compat/gocms/migration-mapping.md)
